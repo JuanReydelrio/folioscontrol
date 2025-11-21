@@ -28,9 +28,8 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # 🧩 Hashear contraseña
 def hash_password(password: str) -> str:
-    # Asegurarse de que no supere 72 bytes
-    password = password.encode("utf-8")[:72].decode("utf-8", errors="ignore")
-    return pwd_context.hash(password)
+    # bcrypt solo permite 72 bytes, truncar directamente
+    return pwd_context.hash(password[:72])
 
 # 🧩 Verificar contraseña
 def verify_password(plain_password: str, hashed_password: str) -> bool:
