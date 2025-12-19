@@ -1,13 +1,17 @@
 from pydantic import BaseModel
-from typing import Optional
 
-# ------- Base -------
+
+# --------------------------------
+#        BASE PARA AMBOS
+# --------------------------------
 class ResumenBase(BaseModel):
     cliente_id: int
     anio: int
 
 
-# ------- Resumen Mensual -------
+# --------------------------------
+#        RESPUESTA MENSUAL
+# --------------------------------
 class ResumenMensualResponse(ResumenBase):
     mes: int
     total_facturas: int
@@ -24,7 +28,9 @@ class ResumenMensualResponse(ResumenBase):
         orm_mode = True
 
 
-# ------- Resumen Anual -------
+# --------------------------------
+#        RESPUESTA ANUAL
+# --------------------------------
 class ResumenAnualResponse(ResumenBase):
     total_facturas: int
     total_notas_credito: int

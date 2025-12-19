@@ -1,36 +1,61 @@
-# Este módulo define las rutas (endpoints) del API relacionadas con usuarios.
-# Aquí conectamos las funciones CRUD con las rutas HTTP.
-# 
-# - POST /usuarios/ → Crear nuevo usuario
-# - GET /usuarios/ → Listar todos los usuarios
-# - POST /usuarios/login → Iniciar sesión (login)
-#
-# Cada ruta se comunica con crud_usuarios.py para ejecutar la lógica de negocio.
-
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from database import get_db
+
 from crud import crud_usuarios
 from schemas.usuario_schema import UsuarioCreate, UsuarioLogin, UsuarioResponse
+
+from security import get_current_user
+from models.usuario_model import Usuario
+from fastapi import HTTPException, status
 
 router = APIRouter(
     prefix="/usuarios",
     tags=["Usuarios"]
 )
 
-# 🧩 Crear nuevo usuario
+
+# ======================================================
+# 🔒 DEPENDENCIA: SOLO ADMIN
+# ======================================================
+def require_admin(usuario: Usuario = Depends(get_current_user)):
+    if usuario.rol != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Acceso denegado: solo administradores."
+        )
+    return usuario
+
+
+# ======================================================
+# 🧩 Crear nuevo usuario (SOLO ADMIN)
+# ======================================================
 @router.post("/", response_model=UsuarioResponse)
-def crear_usuario(usuario: UsuarioCreate, db: Session = Depends(get_db)):
+def crear_usuario(
+    usuario: UsuarioCreate,
+    db: Session = Depends(get_db),
+    _ = Depends(require_admin)
+):
     return crud_usuarios.create_usuario(db, usuario)
 
 
-# 🧩 Listar todos los usuarios
+# ======================================================
+# 🧩 Listar usuarios (SOLO ADMIN)
+# ======================================================
 @router.get("/", response_model=list[UsuarioResponse])
-def listar_usuarios(db: Session = Depends(get_db)):
+def listar_usuarios(
+    db: Session = Depends(get_db),
+    _ = Depends(require_admin)
+):
     return crud_usuarios.get_usuarios(db)
 
 
-# 🧩 Login de usuario (genera token)
+# ======================================================
+# 🔓 Login (PÚBLICO)
+# ======================================================
 @router.post("/login")
-def login(usuario: UsuarioLogin, db: Session = Depends(get_db)):
+def login(
+    usuario: UsuarioLogin,
+    db: Session = Depends(get_db)
+):
     return crud_usuarios.login_usuario(db, usuario)

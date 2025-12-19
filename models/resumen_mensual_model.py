@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, ForeignKey, UniqueConstraint
+from sqlalchemy import Column, Integer, ForeignKey, UniqueConstraint, String
 from sqlalchemy.orm import relationship
 from database import Base
 
@@ -19,7 +19,9 @@ class ResumenMensual(Base):
     total_nota_ajuste = Column(Integer, default=0)
     total_entradas = Column(Integer, default=0)
 
+    saldo_inicial = Column(Integer, default=0)
     saldo_final = Column(Integer, default=0)
+    estado = Column(String(20), default="abierto")  # abierto | cerrado
 
     cliente = relationship("Cliente")
 

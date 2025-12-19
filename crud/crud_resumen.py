@@ -1,144 +1,20 @@
-# crud/crud_resumen.py
 from sqlalchemy.orm import Session
+from datetime import date, datetime
+from fastapi import HTTPException, status
+
 from models.resumen_mensual_model import ResumenMensual
 from models.resumen_anual_model import ResumenAnual
 from models.cliente_model import Cliente
-from datetime import datetime, date
 
-# ------------------------------------------
-# UTILIDAD: Obtener o crear resumen mensual
-# ------------------------------------------
-def get_or_create_resumen_mensual(db: Session, cliente_id: int, anio: int, mes: int):
-    resumen = (
-        db.query(ResumenMensual)
-        .filter_by(cliente_id=cliente_id, anio=anio, mes=mes)
-        .first()
-    )
 
-    if resumen is None:
-        resumen = ResumenMensual(
-            cliente_id=cliente_id,
-            anio=anio,
-            mes=mes,
-            total_facturas=0,
-            total_notas_credito=0,
-            total_notas_debito=0,
-            total_documentos_soporte=0,
-            total_nomina_electronica=0,
-            total_ajuste_nomina=0,
-            total_nota_ajuste=0,
-            total_entradas=0,
-            saldo_final=0,
-        )
-        db.add(resumen)
-        db.commit()
-        db.refresh(resumen)
-
-    return resumen
+# ======================================================
+# 🔁 REFLEJAR SALDO ACTUAL (NO RECALCULA)
+# ======================================================
 def recalcular_saldo_resumenes(db: Session, cliente_id: int, anio: int, mes: int):
 
-    resumen_m = db.query(ResumenMensual).filter_by(
-        cliente_id=cliente_id, anio=anio, mes=mes
-    ).first()
-
-    if resumen_m:
-        resumen_m.saldo_final = (
-            (resumen_m.total_entradas or 0)
-            - (
-                (resumen_m.total_facturas or 0)
-                + (resumen_m.total_notas_credito or 0)
-                + (resumen_m.total_notas_debito or 0)
-                + (resumen_m.total_documentos_soporte or 0)
-                + (resumen_m.total_nomina_electronica or 0)
-                + (resumen_m.total_ajuste_nomina or 0)
-                + (resumen_m.total_nota_ajuste or 0)
-            )
-        )
-        db.add(resumen_m)
-
-    resumen_a = db.query(ResumenAnual).filter_by(
-        cliente_id=cliente_id, anio=anio
-    ).first()
-
-    if resumen_a:
-        resumen_a.saldo_final = (
-            (resumen_a.total_entradas or 0)
-            - (
-                (resumen_a.total_facturas or 0)
-                + (resumen_a.total_notas_credito or 0)
-                + (resumen_a.total_notas_debito or 0)
-                + (resumen_a.total_documentos_soporte or 0)
-                + (resumen_a.total_nomina_electronica or 0)
-                + (resumen_a.total_ajuste_nomina or 0)
-                + (resumen_a.total_nota_ajuste or 0)
-            )
-        )
-
-        db.add(resumen_a)
-
-    db.commit()
-
-
-# ------------------------------------------
-# UTILIDAD: Obtener o crear resumen anual
-# ------------------------------------------
-def get_or_create_resumen_anual(db: Session, cliente_id: int, anio: int):
-    resumen = (
-        db.query(ResumenAnual)
-        .filter_by(cliente_id=cliente_id, anio=anio)
-        .first()
-    )
-
-    if resumen is None:
-        resumen = ResumenAnual(
-            cliente_id=cliente_id,
-            anio=anio,
-            total_facturas=0,
-            total_notas_credito=0,
-            total_notas_debito=0,
-            total_documentos_soporte=0,
-            total_nomina_electronica=0,
-            total_ajuste_nomina=0,
-            total_nota_ajuste=0,
-            total_entradas=0,
-            saldo_final=0,
-        )
-        db.add(resumen)
-        db.commit()
-        db.refresh(resumen)
-
-    return resumen
-
-
-# ------------------------------------------
-# SUMAR ENTRADAS (cuando admin carga folios)
-# ahora recibe `fecha` para determinar mes/anio correctos
-# ------------------------------------------
-def sumar_entrada(db: Session, cliente_id: int, cantidad: int, fecha: date):
-    anio = fecha.year
-    mes = fecha.month
-
-    # Obtener o crear resúmenes
-    resumen_m = get_or_create_resumen_mensual(db, cliente_id, anio, mes)
-    resumen_a = get_or_create_resumen_anual(db, cliente_id, anio)
-
-    # Sumamos entradas (NO facturas)
-    resumen_m.total_entradas = (resumen_m.total_entradas or 0) + cantidad
-    resumen_a.total_entradas = (resumen_a.total_entradas or 0) + cantidad
-
-    db.add(resumen_m)
-    db.add(resumen_a)
-    db.commit()
-
-    recalcular_saldo_resumenes(db, cliente_id, anio, mes)
-
-    return resumen_m, resumen_a
-
-
-
-def restar_entrada(db: Session, cliente_id: int, cantidad: int, fecha: date):
-    anio = fecha.year
-    mes = fecha.month
+    cliente = db.query(Cliente).filter_by(id=cliente_id).first()
+    if not cliente:
+        raise HTTPException(404, "Cliente no encontrado")
 
     resumen_m = db.query(ResumenMensual).filter_by(
         cliente_id=cliente_id, anio=anio, mes=mes
@@ -149,130 +25,271 @@ def restar_entrada(db: Session, cliente_id: int, cantidad: int, fecha: date):
     ).first()
 
     if not resumen_m or not resumen_a:
+        raise HTTPException(409, "Resumen inconsistente")
+
+    # 🔒 No tocar meses cerrados
+    if resumen_m.estado == "cerrado":
         return
 
-    # Restar entradas, con piso en 0
-    resumen_m.total_entradas = max((resumen_m.total_entradas or 0) - cantidad, 0)
-    resumen_a.total_entradas = max((resumen_a.total_entradas or 0) - cantidad, 0)
+    resumen_m.saldo_final = cliente.saldo_actual
+    resumen_a.saldo_final = cliente.saldo_actual
 
-    db.add(resumen_m)
-    db.add(resumen_a)
     db.commit()
 
+
+# ======================================================
+# ➕ ENTRADAS
+# ======================================================
+def sumar_entrada(db: Session, cliente_id: int, cantidad: int, fecha: date):
+
+    anio, mes = fecha.year, fecha.month
+
+    resumen_m = db.query(ResumenMensual).filter_by(
+        cliente_id=cliente_id, anio=anio, mes=mes
+    ).first()
+
+    resumen_a = db.query(ResumenAnual).filter_by(
+        cliente_id=cliente_id, anio=anio
+    ).first()
+
+    if not resumen_m or not resumen_a:
+        raise HTTPException(409, "No existe resumen del período")
+
+    resumen_m.total_entradas += cantidad
+    resumen_a.total_entradas += cantidad
+
+    db.commit()
     recalcular_saldo_resumenes(db, cliente_id, anio, mes)
 
-    return resumen_m, resumen_a
 
+def restar_entrada(db: Session, cliente_id: int, cantidad: int, fecha: date):
 
-# ------------------------------------------
-# SUMAR SALIDAS (FACTURA / NC / ND / DS / ...)
-# ahora recibe `fecha` para usar mes/anio de la operación
-# ------------------------------------------
-def sumar_salida(db: Session, cliente_id: int, tipo_documento: str, fecha: date):
-    if fecha is None:
-        hoy = datetime.now()
-        anio = hoy.year
-        mes = hoy.month
-    else:
-        if isinstance(fecha, datetime):
-            anio = fecha.year
-            mes = fecha.month
-        else:
-            anio = fecha.year
-            mes = fecha.month
+    anio, mes = fecha.year, fecha.month
 
-    mensual = get_or_create_resumen_mensual(db, cliente_id, anio, mes)
-    anual = get_or_create_resumen_anual(db, cliente_id, anio)
+    resumen_m = db.query(ResumenMensual).filter_by(
+        cliente_id=cliente_id, anio=anio, mes=mes
+    ).first()
 
-    # ---- Sumar según el tipo ----
-    if tipo_documento == "FACTURA":
-        mensual.total_facturas = (mensual.total_facturas or 0) + 1
-        anual.total_facturas = (anual.total_facturas or 0) + 1
+    resumen_a = db.query(ResumenAnual).filter_by(
+        cliente_id=cliente_id, anio=anio
+    ).first()
 
-    elif tipo_documento == "NOTA_CREDITO":
-        mensual.total_notas_credito = (mensual.total_notas_credito or 0) + 1
-        anual.total_notas_credito = (anual.total_notas_credito or 0) + 1
+    if not resumen_m or not resumen_a:
+        raise HTTPException(409, "No existe resumen del período")
 
-    elif tipo_documento == "NOTA_DEBITO":
-        mensual.total_notas_debito = (mensual.total_notas_debito or 0) + 1
-        anual.total_notas_debito = (anual.total_notas_debito or 0) + 1
-
-    elif tipo_documento == "DOCUMENTO_SOPORTE":
-        mensual.total_documentos_soporte = (mensual.total_documentos_soporte or 0) + 1
-        anual.total_documentos_soporte = (anual.total_documentos_soporte or 0) + 1
-
-    elif tipo_documento == "NOMINA_ELECTRONICA":
-        mensual.total_nomina_electronica = (mensual.total_nomina_electronica or 0) + 1
-        anual.total_nomina_electronica = (anual.total_nomina_electronica or 0) + 1
-
-    elif tipo_documento == "AJUSTE_NOMINA":
-        mensual.total_ajuste_nomina = (mensual.total_ajuste_nomina or 0) + 1
-        anual.total_ajuste_nomina = (anual.total_ajuste_nomina or 0) + 1
-
-    elif tipo_documento == "NOTA_AJUSTE":
-        mensual.total_nota_ajuste = (mensual.total_nota_ajuste or 0) + 1
-        anual.total_nota_ajuste = (anual.total_nota_ajuste or 0) + 1
-
-    else:
-        raise ValueError(f"Tipo de documento desconocido: {tipo_documento}")
+    resumen_m.total_entradas = max(resumen_m.total_entradas - cantidad, 0)
+    resumen_a.total_entradas = max(resumen_a.total_entradas - cantidad, 0)
 
     db.commit()
-    db.refresh(mensual)
-    db.refresh(anual)
-
-    return mensual, anual
+    recalcular_saldo_resumenes(db, cliente_id, anio, mes)
 
 
-# ------------------------------------------
-# CIERRE DE MES: Guardar saldo_final
-# ------------------------------------------
-def cerrar_mes(db: Session, cliente_id: int, anio: int, mes: int):
-    cliente = db.query(Cliente).filter_by(id=cliente_id).first()
-    if not cliente:
-        return None
+# ======================================================
+# ➖ SALIDAS (DOCUMENTOS)
+# ======================================================
+def sumar_salida(db: Session, cliente_id: int, tipo: str, fecha: date | None):
 
-    resumen = get_or_create_resumen_mensual(db, cliente_id, anio, mes)
-    resumen.saldo_final = cliente.saldo_actual
+    fecha = fecha or datetime.now().date()
+    anio, mes = fecha.year, fecha.month
+
+    m = db.query(ResumenMensual).filter_by(
+        cliente_id=cliente_id, anio=anio, mes=mes
+    ).first()
+
+    a = db.query(ResumenAnual).filter_by(
+        cliente_id=cliente_id, anio=anio
+    ).first()
+
+    if not m or not a:
+        raise HTTPException(409, "No existe resumen del período")
+
+    mapa = {
+        "FACTURA": "total_facturas",
+        "NOTA_CREDITO": "total_notas_credito",
+        "NOTA_DEBITO": "total_notas_debito",
+        "DOCUMENTO_SOPORTE": "total_documentos_soporte",
+        "NOMINA_ELECTRONICA": "total_nomina_electronica",
+        "AJUSTE_NOMINA": "total_ajuste_nomina",
+        "NOTA_AJUSTE": "total_nota_ajuste",
+    }
+
+    if tipo not in mapa:
+        raise HTTPException(400, f"Tipo desconocido: {tipo}")
+
+    setattr(m, mapa[tipo], getattr(m, mapa[tipo]) + 1)
+    setattr(a, mapa[tipo], getattr(a, mapa[tipo]) + 1)
 
     db.commit()
-    return resumen
+    recalcular_saldo_resumenes(db, cliente_id, anio, mes)
 
 
-# ------------------------------------------
-# CIERRE DE AÑO
-# ------------------------------------------
-def cerrar_anio(db: Session, cliente_id: int, anio: int):
-    cliente = db.query(Cliente).filter_by(id=cliente_id).first()
-    if not cliente:
-        return None
+# ======================================================
+# 🔒 VALIDAR MES ABIERTO
+# ======================================================
+def validar_mes_abierto(db: Session, cliente_id: int, fecha: date):
 
-    resumen = get_or_create_resumen_anual(db, cliente_id, anio)
-    resumen.saldo_final = cliente.saldo_actual
+    resumen = db.query(ResumenMensual).filter_by(
+        cliente_id=cliente_id,
+        anio=fecha.year,
+        mes=fecha.month
+    ).first()
 
-    db.commit()
+    if not resumen:
+        raise HTTPException(400, "No existe resumen mensual")
+
+    if resumen.estado == "cerrado":
+        raise HTTPException(409, "El mes está cerrado")
+
     return resumen
 
 
 # ======================================================
-#               CONSULTAS POR NIT
+# 📅 CIERRE AUTOMÁTICO MENSUAL
 # ======================================================
+def cierre_mensual_automatico(db: Session, cliente_id: int, fecha: date):
 
-# --- Obtener resumen mensual por NIT ---
-def resumen_mensual_por_nit(db: Session, nit: str, anio: int, mes: int):
-    return (
+    anio, mes = fecha.year, fecha.month
+    anio_ant, mes_ant = (anio - 1, 12) if mes == 1 else (anio, mes - 1)
+
+    anterior = db.query(ResumenMensual).filter_by(
+        cliente_id=cliente_id, anio=anio_ant, mes=mes_ant
+    ).first()
+
+    if anterior and anterior.estado == "abierto":
+        anterior.estado = "cerrado"
+
+    actual = db.query(ResumenMensual).filter_by(
+        cliente_id=cliente_id, anio=anio, mes=mes
+    ).first()
+
+    if not actual:
+        raise HTTPException(500, "No existe resumen mensual")
+
+    actual.estado = "abierto"
+
+    if actual.saldo_inicial == 0:
+        cliente = db.query(Cliente).get(cliente_id)
+        actual.saldo_inicial = cliente.saldo_actual
+        actual.saldo_final = cliente.saldo_actual
+
+    db.commit()
+
+
+# ======================================================
+# 🧾 CIERRE ANUAL GLOBAL (MANUAL)
+# ======================================================
+def cierre_anual_manual(db: Session, anio: int):
+
+    clientes = db.query(Cliente).all()
+    nuevo_anio = anio + 1
+
+    for cliente in clientes:
+
+        # 🔒 Cerrar todos los meses del año
+        meses = db.query(ResumenMensual).filter_by(
+            cliente_id=cliente.id, anio=anio
+        ).all()
+
+        for m in meses:
+            m.estado = "cerrado"
+
+        # 📌 Congelar resumen anual
+        resumen_anual = db.query(ResumenAnual).filter_by(
+            cliente_id=cliente.id, anio=anio
+        ).first()
+
+        if resumen_anual:
+            resumen_anual.saldo_final = cliente.saldo_actual
+
+        # 🆕 Crear nuevo resumen anual
+        nuevo_anual = ResumenAnual(
+            cliente_id=cliente.id,
+            anio=nuevo_anio,
+            saldo_inicial=cliente.saldo_actual,
+            saldo_final=cliente.saldo_actual
+        )
+        db.add(nuevo_anual)
+
+        # 🆕 Crear meses del nuevo año
+        for mes in range(1, 13):
+            db.add(ResumenMensual(
+                cliente_id=cliente.id,
+                anio=nuevo_anio,
+                mes=mes,
+                estado="abierto" if mes == 1 else "cerrado",
+                saldo_inicial=cliente.saldo_actual if mes == 1 else 0,
+                saldo_final=cliente.saldo_actual if mes == 1 else 0
+            ))
+
+    db.commit()
+
+    return {"msg": f"Año {anio} cerrado y {nuevo_anio} creado correctamente"}
+# ======================================================
+# 📌 OBTENER RESUMEN MENSUAL POR NIT
+# ======================================================
+def resumen_mensual_por_nit(
+    db: Session,
+    nit: str,
+    anio: int,
+    mes: int
+):
+    cliente = db.query(Cliente).filter_by(nit=nit).first()
+    if not cliente:
+        raise HTTPException(404, "Cliente no encontrado")
+
+    resumen = db.query(ResumenMensual).filter_by(
+        cliente_id=cliente.id,
+        anio=anio,
+        mes=mes
+    ).first()
+
+    return resumen
+
+
+# ======================================================
+# 📌 OBTENER RESUMEN ANUAL POR NIT
+# ======================================================
+def resumen_anual_por_nit(
+    db: Session,
+    nit: str,
+    anio: int
+):
+    cliente = db.query(Cliente).filter_by(nit=nit).first()
+    if not cliente:
+        raise HTTPException(404, "Cliente no encontrado")
+
+    resumen = db.query(ResumenAnual).filter_by(
+        cliente_id=cliente.id,
+        anio=anio
+    ).first()
+
+    return resumen
+# ======================================================
+# 📊 RESÚMENES MENSUALES DEL AÑO POR NIT
+# ======================================================
+def resumenes_mensuales_anio_por_nit(
+    db: Session,
+    nit: str,
+    anio: int
+):
+    cliente = db.query(Cliente).filter_by(nit=nit).first()
+    if not cliente:
+        raise HTTPException(404, "Cliente no encontrado")
+
+    resumenes = (
         db.query(ResumenMensual)
-        .join(Cliente)
-        .filter(Cliente.nit == nit, ResumenMensual.anio == anio, ResumenMensual.mes == mes)
-        .first()
+        .filter(
+            ResumenMensual.cliente_id == cliente.id,
+            ResumenMensual.anio == anio
+        )
+        .order_by(ResumenMensual.mes.asc())
+        .all()
     )
 
+    if not resumenes:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No existen resúmenes para el año {anio}"
+        )
 
-# --- Obtener resumen anual por NIT ---
-def resumen_anual_por_nit(db: Session, nit: str, anio: int):
-    return (
-        db.query(ResumenAnual)
-        .join(Cliente)
-        .filter(Cliente.nit == nit, ResumenAnual.anio == anio)
-        .first()
-    )
-
+    return resumenes

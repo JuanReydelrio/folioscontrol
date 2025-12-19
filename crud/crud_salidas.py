@@ -1,3 +1,4 @@
+#crud/crud_salidas.py
 from sqlalchemy.orm import Session
 from models.salida_model import Salida
 from models.cliente_model import Cliente

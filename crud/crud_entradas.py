@@ -1,8 +1,7 @@
-# crud/crud_entradas.py
-
 from typing import List
 from sqlalchemy.orm import Session
-from fastapi import HTTPException, status
+from fastapi import HTTPException
+from datetime import date
 
 from models.entrada_model import Entrada
 from models.cliente_model import Cliente
@@ -11,18 +10,37 @@ from schemas.entrada_schema import EntradaCreate, EntradaUpdate
 from crud.crud_resumen import (
     sumar_entrada,
     restar_entrada,
-    recalcular_saldo_resumenes
+    recalcular_saldo_resumenes,
+    validar_mes_abierto,
+    cierre_mensual_automatico
 )
 
 
 # ======================================================
-#                   CREAR ENTRADA
+# VALIDACIÓN FUERTE: SOLO MES ACTUAL
+# ======================================================
+def validar_mes_actual(fecha: date):
+    hoy = date.today()
+    if fecha.year != hoy.year or fecha.month != hoy.month:
+        raise HTTPException(
+            status_code=409,
+            detail="Solo se permiten movimientos en el mes actual."
+        )
+
+
+# ======================================================
+# CREAR ENTRADA
 # ======================================================
 def create_entrada(db: Session, entrada_in: EntradaCreate, usuario_id: int) -> Entrada:
 
-    cliente = db.query(Cliente).filter(Cliente.id == entrada_in.cliente_id).first()
+    cliente = db.query(Cliente).filter_by(id=entrada_in.cliente_id).first()
     if not cliente:
         raise HTTPException(404, "Cliente no encontrado")
+
+    # 🔒 VALIDACIONES CLAVE
+    validar_mes_actual(entrada_in.fecha)
+    cierre_mensual_automatico(db, entrada_in.cliente_id, entrada_in.fecha)
+    validar_mes_abierto(db, entrada_in.cliente_id, entrada_in.fecha)
 
     entrada = Entrada(
         cliente_id=entrada_in.cliente_id,
@@ -33,20 +51,21 @@ def create_entrada(db: Session, entrada_in: EntradaCreate, usuario_id: int) -> E
     )
 
     try:
-        # Ajustar saldo del cliente
         cliente.saldo_actual = (cliente.saldo_actual or 0) + entrada_in.cantidad
 
         db.add(entrada)
+        db.flush()
 
-        # Resumen mensual/anual
         sumar_entrada(db, entrada.cliente_id, entrada.cantidad, entrada.fecha)
-
-        # Recalcular saldo final mensual y anual
-        recalcular_saldo_resumenes(db, entrada.cliente_id, entrada.fecha.year, entrada.fecha.month)
+        recalcular_saldo_resumenes(
+            db,
+            entrada.cliente_id,
+            entrada.fecha.year,
+            entrada.fecha.month
+        )
 
         db.commit()
         db.refresh(entrada)
-
         return entrada
 
     except Exception as e:
@@ -55,39 +74,40 @@ def create_entrada(db: Session, entrada_in: EntradaCreate, usuario_id: int) -> E
 
 
 # ======================================================
-#                   LISTAR / OBTENER
+# LISTAR / OBTENER
 # ======================================================
 def get_entradas(db: Session) -> List[Entrada]:
     return db.query(Entrada).order_by(Entrada.id.desc()).all()
 
 
 def get_entrada_by_id(db: Session, entrada_id: int) -> Entrada:
-    entrada = db.query(Entrada).filter(Entrada.id == entrada_id).first()
+    entrada = db.query(Entrada).filter_by(id=entrada_id).first()
     if not entrada:
         raise HTTPException(404, "Entrada no encontrada")
     return entrada
 
 
 def get_entradas_by_cliente(db: Session, cliente_id: int) -> List[Entrada]:
-    cliente = db.query(Cliente).filter(Cliente.id == cliente_id).first()
+    cliente = db.query(Cliente).filter_by(id=cliente_id).first()
     if not cliente:
-        raise HTTPException(status_code=404, detail="Cliente no encontrado")
+        raise HTTPException(404, "Cliente no encontrado")
 
     return (
         db.query(Entrada)
-        .filter(Entrada.cliente_id == cliente_id)
+        .filter_by(cliente_id=cliente_id)
         .order_by(Entrada.id.desc())
         .all()
     )
 
 
 # ======================================================
-#                   ACTUALIZAR ENTRADA
+# ACTUALIZAR ENTRADA
 # ======================================================
 def update_entrada(db: Session, entrada_id: int, entrada_data: EntradaUpdate) -> Entrada:
+
     entrada = get_entrada_by_id(db, entrada_id)
 
-    cliente = db.query(Cliente).filter(Cliente.id == entrada.cliente_id).first()
+    cliente = db.query(Cliente).filter_by(id=entrada.cliente_id).first()
     if not cliente:
         raise HTTPException(404, "Cliente asociado no encontrado")
 
@@ -100,37 +120,29 @@ def update_entrada(db: Session, entrada_id: int, entrada_data: EntradaUpdate) ->
     fecha_nueva = data.get("fecha", fecha_original)
     factura_nueva = data.get("numero_factura", entrada.numero_factura)
 
-    try:
-        # --------------------------
-        # CASO 1: NO CAMBIA FECHA NI CANTIDAD
-        # --------------------------
-        if cantidad_nueva == cantidad_original and fecha_nueva == fecha_original:
-            entrada.numero_factura = factura_nueva
-            db.commit()
-            db.refresh(entrada)
-            return entrada
+    # 🔒 VALIDACIONES
+    validar_mes_actual(fecha_nueva)
+    validar_mes_abierto(db, entrada.cliente_id, fecha_nueva)
 
-        # --------------------------
-        # CASO 2: REVERSAR ENTRADA ORIGINAL
-        # --------------------------
+    try:
+        # Revertir original
         restar_entrada(db, entrada.cliente_id, cantidad_original, fecha_original)
         cliente.saldo_actual -= cantidad_original
 
-        # --------------------------
-        # CASO 3: APLICAR ENTRADA NUEVA
-        # --------------------------
+        # Aplicar nueva
         sumar_entrada(db, entrada.cliente_id, cantidad_nueva, fecha_nueva)
         cliente.saldo_actual += cantidad_nueva
 
-        # --------------------------
-        # ACTUALIZAR REGISTRO ENTRADA
-        # --------------------------
         entrada.cantidad = cantidad_nueva
         entrada.fecha = fecha_nueva
         entrada.numero_factura = factura_nueva
 
-        # Recalcular saldo mensual/anual
-        recalcular_saldo_resumenes(db, entrada.cliente_id, fecha_nueva.year, fecha_nueva.month)
+        recalcular_saldo_resumenes(
+            db,
+            entrada.cliente_id,
+            fecha_nueva.year,
+            fecha_nueva.month
+        )
 
         db.commit()
         db.refresh(entrada)
@@ -142,24 +154,30 @@ def update_entrada(db: Session, entrada_id: int, entrada_data: EntradaUpdate) ->
 
 
 # ======================================================
-#                   ELIMINAR ENTRADA
+# ELIMINAR ENTRADA
 # ======================================================
 def delete_entrada(db: Session, entrada_id: int):
+
     entrada = get_entrada_by_id(db, entrada_id)
 
-    cliente = db.query(Cliente).filter(Cliente.id == entrada.cliente_id).first()
+    cliente = db.query(Cliente).filter_by(id=entrada.cliente_id).first()
     if not cliente:
         raise HTTPException(500, "Cliente asociado no encontrado")
 
+    # 🔒 VALIDACIONES
+    validar_mes_actual(entrada.fecha)
+    validar_mes_abierto(db, entrada.cliente_id, entrada.fecha)
+
     try:
-        # Revertir saldo
         cliente.saldo_actual -= entrada.cantidad
 
-        # Revertir en resumen mensual/anual
         restar_entrada(db, entrada.cliente_id, entrada.cantidad, entrada.fecha)
-
-        # Recalcular saldo final
-        recalcular_saldo_resumenes(db, entrada.cliente_id, entrada.fecha.year, entrada.fecha.month)
+        recalcular_saldo_resumenes(
+            db,
+            entrada.cliente_id,
+            entrada.fecha.year,
+            entrada.fecha.month
+        )
 
         db.delete(entrada)
         db.commit()

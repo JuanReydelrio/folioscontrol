@@ -1,5 +1,3 @@
-# routes/resumen_routes.py
-
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from database import get_db
@@ -7,8 +5,8 @@ from database import get_db
 from crud.crud_resumen import (
     resumen_mensual_por_nit,
     resumen_anual_por_nit,
-    cerrar_mes,
-    cerrar_anio
+    cierre_anual_manual,
+    resumenes_mensuales_anio_por_nit
 )
 
 router = APIRouter(
@@ -16,78 +14,60 @@ router = APIRouter(
     tags=["Resúmenes"]
 )
 
-
 # ======================================================
-#     📌 Obtener resumen mensual por NIT
+# 📌 RESUMEN MENSUAL POR NIT
 # ======================================================
 @router.get("/mensual/{nit}")
-def get_resumen_mensual(nit: str, anio: int, mes: int, db: Session = Depends(get_db)):
-    """
-    Consulta un resumen mensual por NIT, año y mes.
-    """
+def get_resumen_mensual(
+    nit: str,
+    anio: int,
+    mes: int,
+    db: Session = Depends(get_db)
+):
     resumen = resumen_mensual_por_nit(db, nit, anio, mes)
 
     if not resumen:
-        raise HTTPException(
-            status_code=404,
-            detail="No existe resumen para ese NIT, año y mes."
-        )
+        raise HTTPException(404, "No existe resumen mensual")
 
     return resumen
 
 
 # ======================================================
-#     📌 Obtener resumen anual por NIT
+# 📌 RESUMEN ANUAL POR NIT
 # ======================================================
 @router.get("/anual/{nit}")
-def get_resumen_anual(nit: str, anio: int, db: Session = Depends(get_db)):
-    """
-    Consulta un resumen anual por NIT y año.
-    """
+def get_resumen_anual(
+    nit: str,
+    anio: int,
+    db: Session = Depends(get_db)
+):
     resumen = resumen_anual_por_nit(db, nit, anio)
 
     if not resumen:
-        raise HTTPException(
-            status_code=404,
-            detail="No existe resumen anual para ese NIT y año."
-        )
+        raise HTTPException(404, "No existe resumen anual")
 
     return resumen
 
 
 # ======================================================
-#     📌 Cerrar mes (guardar saldo_final)
+# 🔒 CIERRE ANUAL GLOBAL (ADMIN)
 # ======================================================
-@router.post("/cerrar-mes/{cliente_id}")
-def cerrar_mes_endpoint(cliente_id: int, anio: int, mes: int, db: Session = Depends(get_db)):
-    """
-    Cierra un mes para un cliente, guardando su saldo_final real.
-    """
-    resumen = cerrar_mes(db, cliente_id, anio, mes)
-
-    if not resumen:
-        raise HTTPException(
-            status_code=404,
-            detail="Cliente no encontrado."
-        )
-
-    return {"msg": "Mes cerrado correctamente", "resumen": resumen}
-
-
+@router.post("/cerrar-anio")
+def cerrar_anio_global(
+    anio: int,
+    db: Session = Depends(get_db)
+):
+    return cierre_anual_manual(db, anio)
 # ======================================================
-#     📌 Cerrar año (guardar saldo_final anual)
+# 📊 Resúmenes mensuales de TODO el año por NIT
 # ======================================================
-@router.post("/cerrar-anio/{cliente_id}")
-def cerrar_anio_endpoint(cliente_id: int, anio: int, db: Session = Depends(get_db)):
+@router.get("/mensuales/{nit}")
+def get_resumenes_mensuales_anio(
+    nit: str,
+    anio: int,
+    db: Session = Depends(get_db)
+):
     """
-    Cierra el año para un cliente, guardando su saldo_final anual.
+    Devuelve los 12 resúmenes mensuales de un año para un cliente.
     """
-    resumen = cerrar_anio(db, cliente_id, anio)
-
-    if not resumen:
-        raise HTTPException(
-            status_code=404,
-            detail="Cliente no encontrado."
-        )
-
-    return {"msg": "Año cerrado correctamente", "resumen": resumen}
+    return resumenes_mensuales_anio_por_nit(db, nit, anio)

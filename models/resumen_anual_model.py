@@ -18,6 +18,7 @@ class ResumenAnual(Base):
     total_nota_ajuste = Column(Integer, default=0)
     total_entradas = Column(Integer, default=0)
 
+    saldo_inicial = Column(Integer, default=0)
     saldo_final = Column(Integer, default=0)
 
     cliente = relationship("Cliente")
