@@ -76,7 +76,9 @@ def create_cliente(db: Session, cliente: ClienteCreate) -> Cliente:
             total_ajuste_nomina=0,
             total_nota_ajuste=0,
             total_entradas=0,
+            saldo_inicial=nuevo.saldo_actual,
             saldo_final=nuevo.saldo_actual
+
         )
         db.add(resumen_anual)
 

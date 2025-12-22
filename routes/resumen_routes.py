@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from database import get_db
+from security import get_current_user
 
 from crud.crud_resumen import (
     resumen_mensual_por_nit,
@@ -8,6 +9,17 @@ from crud.crud_resumen import (
     cierre_anual_manual,
     resumenes_mensuales_anio_por_nit
 )
+
+from fastapi import HTTPException, status
+
+def require_admin(usuario = Depends(get_current_user)):
+    if usuario.rol != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Acceso denegado: solo administradores"
+        )
+    return usuario
+
 
 router = APIRouter(
     prefix="/resumenes",
@@ -22,7 +34,8 @@ def get_resumen_mensual(
     nit: str,
     anio: int,
     mes: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _ = Depends(require_admin)
 ):
     resumen = resumen_mensual_por_nit(db, nit, anio, mes)
 
@@ -39,7 +52,8 @@ def get_resumen_mensual(
 def get_resumen_anual(
     nit: str,
     anio: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _ = Depends(require_admin)
 ):
     resumen = resumen_anual_por_nit(db, nit, anio)
 
@@ -50,24 +64,25 @@ def get_resumen_anual(
 
 
 # ======================================================
-# 🔒 CIERRE ANUAL GLOBAL (ADMIN)
-# ======================================================
-@router.post("/cerrar-anio")
-def cerrar_anio_global(
-    anio: int,
-    db: Session = Depends(get_db)
-):
-    return cierre_anual_manual(db, anio)
-# ======================================================
-# 📊 Resúmenes mensuales de TODO el año por NIT
+# 📊 RESÚMENES MENSUALES DEL AÑO
 # ======================================================
 @router.get("/mensuales/{nit}")
 def get_resumenes_mensuales_anio(
     nit: str,
     anio: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _ = Depends(require_admin)
 ):
-    """
-    Devuelve los 12 resúmenes mensuales de un año para un cliente.
-    """
     return resumenes_mensuales_anio_por_nit(db, nit, anio)
+
+
+# ======================================================
+# 🔒 CIERRE ANUAL GLOBAL
+# ======================================================
+@router.post("/cerrar-anio")
+def cerrar_anio_global(
+    anio: int,
+    db: Session = Depends(get_db),
+    _ = Depends(require_admin)
+):
+    return cierre_anual_manual(db, anio)
