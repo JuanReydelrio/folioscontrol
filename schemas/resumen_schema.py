@@ -18,6 +18,7 @@ class ResumenMensualResponse(ResumenBase):
     total_notas_credito: int
     total_notas_debito: int
     total_documentos_soporte: int
+    total_ajuste_documento_soporte: int  
     total_nomina_electronica: int
     total_ajuste_nomina: int
     total_nota_ajuste: int
@@ -36,6 +37,7 @@ class ResumenAnualResponse(ResumenBase):
     total_notas_credito: int
     total_notas_debito: int
     total_documentos_soporte: int
+    total_ajuste_documento_soporte: int  
     total_nomina_electronica: int
     total_ajuste_nomina: int
     total_nota_ajuste: int

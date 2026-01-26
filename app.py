@@ -11,8 +11,10 @@ from routes import (
     clientes_routes,
     entrada_routes,
     salida_routes,
-    resumen_routes
+    resumen_routes,
+    ajuste_routes
 )
+
 
 # 🔹 Crear las tablas en la base de datos si no existen
 Base.metadata.create_all(bind=engine)
@@ -43,6 +45,7 @@ app.include_router(clientes_routes.router)
 app.include_router(entrada_routes.router)
 app.include_router(salida_routes.router)
 app.include_router(resumen_routes.router)
+app.include_router(ajuste_routes.router)
 
 # 🔹 Ruta raíz
 @app.get("/")

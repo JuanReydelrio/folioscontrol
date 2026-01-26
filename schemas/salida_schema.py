@@ -1,3 +1,4 @@
+#schemas/salida_schema.py
 from pydantic import BaseModel
 from models.salida_model import TipoDocumentoEnum
 from datetime import date
@@ -16,5 +17,10 @@ class SalidaResponse(BaseModel):
     fecha_documento: date
     cantidad: int
 
+class SalidaOperacionResponse(BaseModel):
+    estado: str
+    mensaje: str
+    
     class Config:
+        orm_mode = True
         from_attributes = True

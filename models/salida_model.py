@@ -1,3 +1,4 @@
+# models/salida_model.py
 from sqlalchemy import Column, Integer, String, Enum, Date, ForeignKey
 from sqlalchemy.orm import relationship
 from database import Base
@@ -10,6 +11,7 @@ class TipoDocumentoEnum(str, enum.Enum):
     NOTA_CREDITO = "NOTA_CREDITO"
     NOTA_DEBITO = "NOTA_DEBITO"
     DOCUMENTO_SOPORTE = "DOCUMENTO_SOPORTE"
+    AJUSTE_DOCUMENTO_SOPORTE = "AJUSTE_DOCUMENTO_SOPORTE"  # 👈 NUEVO
     NOMINA_ELECTRONICA = "NOMINA_ELECTRONICA"
     AJUSTE_NOMINA = "AJUSTE_NOMINA"
     NOTA_AJUSTE = "NOTA_AJUSTE"

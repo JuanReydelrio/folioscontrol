@@ -72,40 +72,60 @@ def create_cliente(db: Session, cliente: ClienteCreate) -> Cliente:
             total_notas_credito=0,
             total_notas_debito=0,
             total_documentos_soporte=0,
+            total_ajuste_documentos_soporte=0,  # ✅ corregido
             total_nomina_electronica=0,
             total_ajuste_nomina=0,
             total_nota_ajuste=0,
             total_entradas=0,
+            total_ajustes=0,                    # ✅ nuevo
             saldo_inicial=nuevo.saldo_actual,
             saldo_final=nuevo.saldo_actual
-
         )
+
         db.add(resumen_anual)
 
         # ==================================================
         # Resúmenes mensuales (12 meses)
         # ==================================================
         for mes in range(1, 13):
-            es_mes_actual = mes == mes_actual
+
+            if mes < mes_actual:
+                estado = "cerrado"
+                saldo_inicial = 0
+                saldo_final = 0
+
+            elif mes == mes_actual:
+                estado = "abierto"
+                saldo_inicial = nuevo.saldo_actual
+                saldo_final = nuevo.saldo_actual
+
+            else:  # meses futuros
+                estado = "cerrado"
+                saldo_inicial = 0
+                saldo_final = 0
 
             resumen_mensual = ResumenMensual(
                 cliente_id=nuevo.id,
                 anio=anio_actual,
                 mes=mes,
-                estado="abierto" if es_mes_actual else "cerrado",
-                saldo_inicial=nuevo.saldo_actual if es_mes_actual else 0,
-                saldo_final=nuevo.saldo_actual if es_mes_actual else 0,
+                estado=estado,
+                saldo_inicial=saldo_inicial,
+                saldo_final=saldo_final,
+
                 total_facturas=0,
                 total_notas_credito=0,
                 total_notas_debito=0,
                 total_documentos_soporte=0,
+                total_ajuste_documentos_soporte=0,
                 total_nomina_electronica=0,
                 total_ajuste_nomina=0,
                 total_nota_ajuste=0,
-                total_entradas=0
+                total_entradas=0,
+                total_ajustes=0
             )
 
             db.add(resumen_mensual)
+
 
         db.commit()
 

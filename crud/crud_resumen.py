@@ -7,14 +7,11 @@ from models.resumen_anual_model import ResumenAnual
 from models.cliente_model import Cliente
 
 
-# ======================================================
-# 🔁 REFLEJAR SALDO ACTUAL (NO RECALCULA)
-# ======================================================
 def recalcular_saldo_resumenes(db: Session, cliente_id: int, anio: int, mes: int):
 
     cliente = db.query(Cliente).filter_by(id=cliente_id).first()
     if not cliente:
-        raise HTTPException(404, "Cliente no encontrado")
+        return  # helper silencioso
 
     resumen_m = db.query(ResumenMensual).filter_by(
         cliente_id=cliente_id, anio=anio, mes=mes
@@ -24,8 +21,9 @@ def recalcular_saldo_resumenes(db: Session, cliente_id: int, anio: int, mes: int
         cliente_id=cliente_id, anio=anio
     ).first()
 
+    # Si no existen aún, no es error
     if not resumen_m or not resumen_a:
-        raise HTTPException(409, "Resumen inconsistente")
+        return
 
     # 🔒 No tocar meses cerrados
     if resumen_m.estado == "cerrado":
@@ -33,9 +31,6 @@ def recalcular_saldo_resumenes(db: Session, cliente_id: int, anio: int, mes: int
 
     resumen_m.saldo_final = cliente.saldo_actual
     resumen_a.saldo_final = cliente.saldo_actual
-
-    db.commit()
-
 
 # ======================================================
 # ➕ ENTRADAS
@@ -108,6 +103,7 @@ def sumar_salida(db: Session, cliente_id: int, tipo: str, fecha: date | None):
         "NOTA_CREDITO": "total_notas_credito",
         "NOTA_DEBITO": "total_notas_debito",
         "DOCUMENTO_SOPORTE": "total_documentos_soporte",
+        "AJUSTE_DOCUMENTO_SOPORTE": "total_ajuste_documentos_soporte",
         "NOMINA_ELECTRONICA": "total_nomina_electronica",
         "AJUSTE_NOMINA": "total_ajuste_nomina",
         "NOTA_AJUSTE": "total_nota_ajuste",
@@ -293,3 +289,65 @@ def resumenes_mensuales_anio_por_nit(
         )
 
     return resumenes
+
+#======================================================
+# + sumar ajuste
+#=====================================================
+def sumar_ajuste(db: Session, cliente_id: int, cantidad: int, fecha: date):
+
+    m = db.query(ResumenMensual).filter_by(
+        cliente_id=cliente_id,
+        anio=fecha.year,
+        mes=fecha.month
+    ).first()
+
+    a = db.query(ResumenAnual).filter_by(
+        cliente_id=cliente_id,
+        anio=fecha.year
+    ).first()
+
+    if not m or not a:
+        raise HTTPException(409, "Resumen no encontrado")
+
+    m.total_ajustes += cantidad
+    a.total_ajustes += cantidad
+
+
+# ======================================================
+# sincronizar mes actual
+# ======================================================
+def sincronizar_mes_actual(db: Session):
+    hoy = date.today()
+    anio = hoy.year
+    mes = hoy.month
+
+    # ¿Ya existe algún resumen abierto del mes actual?
+    existe_abierto = db.query(ResumenMensual).filter(
+        ResumenMensual.anio == anio,
+        ResumenMensual.mes == mes,
+        ResumenMensual.estado == "abierto"
+    ).first()
+
+    if existe_abierto:
+        return  # Todo bien, no hacer nada
+
+    # 1️⃣ Cerrar TODOS los meses anteriores
+    db.query(ResumenMensual).filter(
+        ResumenMensual.anio == anio,
+        ResumenMensual.mes < mes,
+        ResumenMensual.estado == "abierto"
+    ).update(
+        {"estado": "cerrado"},
+        synchronize_session=False
+    )
+
+    # 2️⃣ Abrir mes actual para TODOS los clientes
+    db.query(ResumenMensual).filter(
+        ResumenMensual.anio == anio,
+        ResumenMensual.mes == mes
+    ).update(
+        {"estado": "abierto"},
+        synchronize_session=False
+    )
+
+    db.commit()

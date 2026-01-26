@@ -1,3 +1,4 @@
+# models/resumen_mensual_model.py
 from sqlalchemy import Column, Integer, ForeignKey, UniqueConstraint, String
 from sqlalchemy.orm import relationship
 from database import Base
@@ -14,10 +15,13 @@ class ResumenMensual(Base):
     total_notas_credito = Column(Integer, default=0)
     total_notas_debito = Column(Integer, default=0)
     total_documentos_soporte = Column(Integer, default=0)
+    total_ajuste_documentos_soporte = Column(Integer, default=0)
     total_nomina_electronica = Column(Integer, default=0)
     total_ajuste_nomina = Column(Integer, default=0)
     total_nota_ajuste = Column(Integer, default=0)
     total_entradas = Column(Integer, default=0)
+
+    total_ajustes = Column(Integer, default=0)
 
     saldo_inicial = Column(Integer, default=0)
     saldo_final = Column(Integer, default=0)

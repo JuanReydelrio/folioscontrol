@@ -4,12 +4,38 @@ from models.salida_model import Salida
 from models.cliente_model import Cliente
 from schemas.salida_schema import SalidaCreate
 from datetime import date
-from crud.crud_resumen import sumar_salida
+from services.email_service import enviar_alerta_folios   
+from crud.crud_resumen import sumar_salida, sincronizar_mes_actual
 
+# ======================================================
+# 🔔 ALERTAS CONTROLADAS (SIN SPAM)
+# ======================================================
+def verificar_y_enviar_alerta(cliente, saldo_antes, saldo_despues, mensaje):
+    # 🟡 Cruza mínimo de alerta
+    if (
+        saldo_antes > cliente.minimo_alerta
+        and saldo_despues <= cliente.minimo_alerta
+        and saldo_despues > 0
+    ):
+        enviar_alerta_folios(
+            cliente_nombre=cliente.nombre,
+            nit=cliente.nit,
+            mensaje=mensaje,
+            saldo=saldo_despues
+        )
+
+    # 🔴 Llega a 0
+    if saldo_antes > 0 and saldo_despues == 0:
+        enviar_alerta_folios(
+            cliente_nombre=cliente.nombre,
+            nit=cliente.nit,
+            mensaje=mensaje,
+            saldo=saldo_despues
+        )
 
 
 def crear_salida(db: Session, data: SalidaCreate):
-
+    sincronizar_mes_actual(db)
     cantidad = 1
     hoy = date.today()
 
@@ -37,7 +63,7 @@ def crear_salida(db: Session, data: SalidaCreate):
             "estado": "APROBADO",
             "mensaje": "Documento duplicado. No se descontó folio."
         }
-
+    saldo_antes = cliente.saldo_actual
     saldo_despues = cliente.saldo_actual - cantidad
 
     # ====================================
@@ -122,6 +148,13 @@ def crear_salida(db: Session, data: SalidaCreate):
     db.refresh(cliente)
         # 🔥 Actualizar resumen mensual + anual
     sumar_salida(db, cliente.id, data.tipo_documento, hoy)
+    
+    verificar_y_enviar_alerta(
+        cliente,
+        saldo_antes,
+        saldo_despues,
+        mensaje
+    )
 
     return {"estado": "APROBADO", "mensaje": mensaje}
 
