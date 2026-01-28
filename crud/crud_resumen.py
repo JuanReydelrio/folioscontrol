@@ -32,6 +32,8 @@ def recalcular_saldo_resumenes(db: Session, cliente_id: int, anio: int, mes: int
     resumen_m.saldo_final = cliente.saldo_actual
     resumen_a.saldo_final = cliente.saldo_actual
 
+    db.flush()
+
 # ======================================================
 # ➕ ENTRADAS
 # ======================================================
@@ -53,9 +55,9 @@ def sumar_entrada(db: Session, cliente_id: int, cantidad: int, fecha: date):
     resumen_m.total_entradas += cantidad
     resumen_a.total_entradas += cantidad
 
-    db.commit()
+   
     recalcular_saldo_resumenes(db, cliente_id, anio, mes)
-
+    db.flush()
 
 def restar_entrada(db: Session, cliente_id: int, cantidad: int, fecha: date):
 
@@ -75,9 +77,9 @@ def restar_entrada(db: Session, cliente_id: int, cantidad: int, fecha: date):
     resumen_m.total_entradas = max(resumen_m.total_entradas - cantidad, 0)
     resumen_a.total_entradas = max(resumen_a.total_entradas - cantidad, 0)
 
-    db.commit()
+    
     recalcular_saldo_resumenes(db, cliente_id, anio, mes)
-
+    db.flush()
 
 # ======================================================
 # ➖ SALIDAS (DOCUMENTOS)
@@ -115,9 +117,9 @@ def sumar_salida(db: Session, cliente_id: int, tipo: str, fecha: date | None):
     setattr(m, mapa[tipo], getattr(m, mapa[tipo]) + 1)
     setattr(a, mapa[tipo], getattr(a, mapa[tipo]) + 1)
 
-    db.commit()
+  
     recalcular_saldo_resumenes(db, cliente_id, anio, mes)
-
+    db.flush()
 
 # ======================================================
 # 🔒 VALIDAR MES ABIERTO
@@ -312,6 +314,8 @@ def sumar_ajuste(db: Session, cliente_id: int, cantidad: int, fecha: date):
     m.total_ajustes += cantidad
     a.total_ajustes += cantidad
 
+    recalcular_saldo_resumenes(db, cliente_id, fecha.year, fecha.month)
+    db.flush()
 
 # ======================================================
 # sincronizar mes actual
