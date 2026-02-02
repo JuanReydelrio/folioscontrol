@@ -96,12 +96,13 @@ def crear_salida(db: Session, data: SalidaCreate):
 
         db.add(nueva_salida)
         cliente.saldo_actual = saldo_despues
-        db.commit()
-        db.refresh(nueva_salida) 
         # 🔥 Actualiza resumen mensual + anual
         sumar_salida(db, cliente.id, data.tipo_documento, hoy)
+        db.commit()
+        db.refresh(nueva_salida) 
+        db.refresh(cliente)
         return {"estado": "APROBADO", "mensaje": mensaje}
-
+    
     # ====================================
     # 5. CLIENTE NO BLOQUEADO
     # ====================================
@@ -143,12 +144,13 @@ def crear_salida(db: Session, data: SalidaCreate):
 
     db.add(nueva_salida)
     cliente.saldo_actual = saldo_despues
+    # 🔥 Actualizar resumen mensual + anual
+    sumar_salida(db, cliente.id, data.tipo_documento, hoy)
+    
     db.commit()
     db.refresh(nueva_salida)
     db.refresh(cliente)
-        # 🔥 Actualizar resumen mensual + anual
-    sumar_salida(db, cliente.id, data.tipo_documento, hoy)
-    
+
     verificar_y_enviar_alerta(
         cliente,
         saldo_antes,
