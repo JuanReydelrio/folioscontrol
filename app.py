@@ -32,7 +32,8 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:5500",       # desarrollo local
         "http://127.0.0.1:5500",
-        "https://tudominio.com"        # Hostinger (luego)
+        "https://dreamsoft.com.co",
+        "https://www.dreamsoft.com.co"        # Hostinger (luego)
     ],
     allow_credentials=True,
     allow_methods=["*"],
