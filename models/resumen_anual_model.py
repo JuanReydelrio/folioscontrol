@@ -1,5 +1,5 @@
 # models/resumen_anual_model.py
-from sqlalchemy import Column, Integer, ForeignKey, UniqueConstraint
+from sqlalchemy import Column, Integer, ForeignKey, String, UniqueConstraint
 from sqlalchemy.orm import relationship
 from database import Base
 
@@ -24,7 +24,7 @@ class ResumenAnual(Base):
 
     saldo_inicial = Column(Integer, default=0)
     saldo_final = Column(Integer, default=0)
-
+    estado = Column(String(20), default="abierto") # abierto | cerrado
     cliente = relationship("Cliente")
 
     __table_args__ = (

@@ -6,7 +6,7 @@ aquí sólo operaciones puras contra la base de datos.
 
 from sqlalchemy.orm import Session
 from fastapi import HTTPException, status
-from datetime import date
+from services.time_service import obtener_fecha_actual
 
 from models.cliente_model import Cliente
 from models.resumen_mensual_model import ResumenMensual
@@ -47,7 +47,9 @@ def create_cliente(db: Session, cliente: ClienteCreate) -> Cliente:
         saldo_actual=cliente.saldo_actual or 0,
         bloqueado=cliente.bloqueado or False,
         minimo_alerta=cliente.minimo_alerta,
-        inactivo=cliente.inactivo or False
+        inactivo=cliente.inactivo or False,
+        valor_folio=cliente.valor_folio,
+        correo_electronico=cliente.correo_electronico
     )
 
     db.add(nuevo)
@@ -57,9 +59,11 @@ def create_cliente(db: Session, cliente: ClienteCreate) -> Cliente:
     # -------------------------------
     # Fechas actuales
     # -------------------------------
-    hoy = date.today()
+    hoy = obtener_fecha_actual()
+    print(f"Fecha actual obtenida: {hoy}")  # Debug: Verificar fecha actual
     anio_actual = hoy.year
     mes_actual = hoy.month
+
 
     try:
         # ==================================================
@@ -79,7 +83,8 @@ def create_cliente(db: Session, cliente: ClienteCreate) -> Cliente:
             total_entradas=0,
             total_ajustes=0,                    # ✅ nuevo
             saldo_inicial=nuevo.saldo_actual,
-            saldo_final=nuevo.saldo_actual
+            saldo_final=nuevo.saldo_actual,
+            estado="abierto"
         )
 
         db.add(resumen_anual)
@@ -137,7 +142,7 @@ def create_cliente(db: Session, cliente: ClienteCreate) -> Cliente:
         )
 
     return nuevo
-
+  
 
 # ======================================================
 #                   OBTENER

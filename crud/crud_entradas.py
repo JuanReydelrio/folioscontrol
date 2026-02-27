@@ -7,12 +7,16 @@ from models.entrada_model import Entrada
 from models.cliente_model import Cliente
 from schemas.entrada_schema import EntradaCreate, EntradaUpdate
 
+from services.time_service import obtener_fecha_actual
+
+
 from crud.crud_resumen import (
     sumar_entrada,
     restar_entrada,
     recalcular_saldo_resumenes,
     validar_mes_abierto,
-    cierre_mensual_automatico
+    cierre_mensual_automatico,
+    sincronizar_mes_actual
 )
 
 
@@ -20,7 +24,7 @@ from crud.crud_resumen import (
 # VALIDACIÓN FUERTE: SOLO MES ACTUAL
 # ======================================================
 def validar_mes_actual(fecha: date):
-    hoy = date.today()
+    hoy = obtener_fecha_actual()
     if fecha.year != hoy.year or fecha.month != hoy.month:
         raise HTTPException(
             status_code=409,
@@ -99,7 +103,6 @@ def get_entradas_by_cliente(db: Session, cliente_id: int) -> List[Entrada]:
         .all()
     )
 
-
 # ======================================================
 # ACTUALIZAR ENTRADA
 # ======================================================
@@ -120,8 +123,13 @@ def update_entrada(db: Session, entrada_id: int, entrada_data: EntradaUpdate) ->
     fecha_nueva = data.get("fecha", fecha_original)
     factura_nueva = data.get("numero_factura", entrada.numero_factura)
 
-    # 🔒 VALIDACIONES
+    # 🔒 ORDEN CORRECTO
     validar_mes_actual(fecha_nueva)
+
+    sincronizar_mes_actual(db, fecha_nueva)
+
+    cierre_mensual_automatico(db, entrada.cliente_id, fecha_nueva)
+
     validar_mes_abierto(db, entrada.cliente_id, fecha_nueva)
 
     try:
@@ -164,14 +172,20 @@ def delete_entrada(db: Session, entrada_id: int):
     if not cliente:
         raise HTTPException(500, "Cliente asociado no encontrado")
 
-    # 🔒 VALIDACIONES
+    # 🔒 ORDEN CORRECTO
     validar_mes_actual(entrada.fecha)
+
+    sincronizar_mes_actual(db, entrada.fecha)
+
+    cierre_mensual_automatico(db, entrada.cliente_id, entrada.fecha)
+
     validar_mes_abierto(db, entrada.cliente_id, entrada.fecha)
 
     try:
         cliente.saldo_actual -= entrada.cantidad
 
         restar_entrada(db, entrada.cliente_id, entrada.cantidad, entrada.fecha)
+
         recalcular_saldo_resumenes(
             db,
             entrada.cliente_id,

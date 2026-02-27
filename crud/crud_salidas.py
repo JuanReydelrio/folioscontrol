@@ -3,9 +3,9 @@ from sqlalchemy.orm import Session
 from models.salida_model import Salida
 from models.cliente_model import Cliente
 from schemas.salida_schema import SalidaCreate
-from datetime import date
+from services.time_service import obtener_fecha_actual
 from services.email_service import enviar_alerta_folios   
-from crud.crud_resumen import sumar_salida, sincronizar_mes_actual
+from crud.crud_resumen import sumar_salida, sincronizar_mes_actual, cierre_mensual_automatico
 
 # ======================================================
 # 🔔 ALERTAS CONTROLADAS (SIN SPAM)
@@ -35,9 +35,28 @@ def verificar_y_enviar_alerta(cliente, saldo_antes, saldo_despues, mensaje):
 
 
 def crear_salida(db: Session, data: SalidaCreate):
+    hoy = obtener_fecha_actual()
+# 1. Sincronizar mes actual (global, no depende del cliente)
     sincronizar_mes_actual(db)
+
+    # 2. Buscar cliente por NIT
+    cliente: Cliente | None = db.query(Cliente).filter(Cliente.nit == data.nit).first()
+    
+    if not cliente:
+        return {"estado": "RECHAZADO", "mensaje": "El cliente no existe."}
+
+    # 3. Cliente inactivo
+    if cliente.inactivo:
+        return {
+            "estado": "RECHAZADO",
+            "mensaje": "El cliente está inactivo y no puede emitir documentos."
+        }
+
+    # 4. Cierre mensual automático (usamos cliente.id, no data.cliente_id)
+    cierre_mensual_automatico(db, cliente.id, hoy)
     cantidad = 1
-    hoy = date.today()
+ 
+
 
     cliente: Cliente = db.query(Cliente).filter(Cliente.nit == data.nit).first()
 
@@ -90,7 +109,7 @@ def crear_salida(db: Session, data: SalidaCreate):
             cliente_id=cliente.id,
             tipo_documento=data.tipo_documento,
             numero_documento=data.numero_documento,
-            fecha_documento=date.today(),
+            fecha_documento=hoy,
             cantidad=cantidad
         )
 
@@ -138,7 +157,7 @@ def crear_salida(db: Session, data: SalidaCreate):
         cliente_id=cliente.id,
         tipo_documento=data.tipo_documento,
         numero_documento=data.numero_documento,
-        fecha_documento=date.today(),
+        fecha_documento=hoy,
         cantidad=cantidad
     )
 

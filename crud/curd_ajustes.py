@@ -2,9 +2,11 @@ from sqlalchemy.orm import Session
 from fastapi import HTTPException
 from datetime import date
 from typing import List
+from services.time_service import obtener_fecha_actual  
 
 from models.ajuste_model import Ajuste
 from models.cliente_model import Cliente
+
 
 from crud.crud_resumen import (
     sumar_ajuste,
@@ -14,7 +16,7 @@ from crud.crud_resumen import (
 )
 
 def validar_mes_actual(fecha: date):
-    hoy = date.today()
+    hoy = obtener_fecha_actual()
     if fecha.year != hoy.year or fecha.month != hoy.month:
         raise HTTPException(
             status_code=409,

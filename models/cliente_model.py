@@ -1,5 +1,8 @@
 # models/cliente_model.py
-from sqlalchemy import Column, Integer, String, Boolean
+from typing import Optional
+
+from pydantic import EmailStr
+from sqlalchemy import Column, Float, Integer, String, Boolean
 from database import Base
 from sqlalchemy.orm import relationship
 
@@ -13,6 +16,11 @@ class Cliente(Base):
     bloqueado = Column(Integer, nullable=False, default=0)
     minimo_alerta = Column(Integer, nullable=False, default=0)
     inactivo = Column(Boolean, nullable=False, default=0)
+# Campos nuevos ────────────────────────────────
+    valor_folio = Column(Float, nullable=False, default=150)
+    correo_electronico = Column(String(120), nullable=True, index=True)
+
+
  # Relación con Entradas
     entradas = relationship(
         "Entrada",

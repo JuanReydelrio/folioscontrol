@@ -1,10 +1,12 @@
 from sqlalchemy.orm import Session
-from datetime import date, datetime
 from fastapi import HTTPException, status
+from datetime import date
 
 from models.resumen_mensual_model import ResumenMensual
 from models.resumen_anual_model import ResumenAnual
 from models.cliente_model import Cliente
+
+from services.time_service import obtener_fecha_actual
 
 
 def recalcular_saldo_resumenes(db: Session, cliente_id: int, anio: int, mes: int):
@@ -86,7 +88,7 @@ def restar_entrada(db: Session, cliente_id: int, cantidad: int, fecha: date):
 # ======================================================
 def sumar_salida(db: Session, cliente_id: int, tipo: str, fecha: date | None):
 
-    fecha = fecha or datetime.now().date()
+    fecha = fecha or obtener_fecha_actual()
     anio, mes = fecha.year, fecha.month
 
     m = db.query(ResumenMensual).filter_by(
@@ -155,7 +157,10 @@ def cierre_mensual_automatico(db: Session, cliente_id: int, fecha: date):
 
     if anterior and anterior.estado == "abierto":
         anterior.estado = "cerrado"
-
+    if mes == 1:
+        cierre_anual_manual(db, anio - 1)
+        return
+    
     actual = db.query(ResumenMensual).filter_by(
         cliente_id=cliente_id, anio=anio, mes=mes
     ).first()
@@ -178,12 +183,21 @@ def cierre_mensual_automatico(db: Session, cliente_id: int, fecha: date):
 # ======================================================
 def cierre_anual_manual(db: Session, anio: int):
 
+    # 🔒 Verificar si el año ya está cerrado
+    existe_abierto = db.query(ResumenAnual).filter_by(
+        anio=anio,
+        estado="abierto"
+    ).first()
+
+    if not existe_abierto:
+        return {"msg": f"Año {anio} ya estaba cerrado"}
+
     clientes = db.query(Cliente).all()
     nuevo_anio = anio + 1
 
     for cliente in clientes:
 
-        # 🔒 Cerrar todos los meses del año
+        # cerrar meses
         meses = db.query(ResumenMensual).filter_by(
             cliente_id=cliente.id, anio=anio
         ).all()
@@ -191,24 +205,34 @@ def cierre_anual_manual(db: Session, anio: int):
         for m in meses:
             m.estado = "cerrado"
 
-        # 📌 Congelar resumen anual
+        # cerrar resumen anual
         resumen_anual = db.query(ResumenAnual).filter_by(
             cliente_id=cliente.id, anio=anio
         ).first()
 
         if resumen_anual:
+            resumen_anual.estado = "cerrado"
             resumen_anual.saldo_final = cliente.saldo_actual
 
-        # 🆕 Crear nuevo resumen anual
+        # 🔒 Verificar que el nuevo año no exista
+        ya_existe = db.query(ResumenAnual).filter_by(
+            cliente_id=cliente.id,
+            anio=nuevo_anio
+        ).first()
+
+        if ya_existe:
+            continue
+
+        # crear nuevo año
         nuevo_anual = ResumenAnual(
             cliente_id=cliente.id,
             anio=nuevo_anio,
+            estado="abierto",
             saldo_inicial=cliente.saldo_actual,
             saldo_final=cliente.saldo_actual
         )
         db.add(nuevo_anual)
 
-        # 🆕 Crear meses del nuevo año
         for mes in range(1, 13):
             db.add(ResumenMensual(
                 cliente_id=cliente.id,
@@ -220,8 +244,6 @@ def cierre_anual_manual(db: Session, anio: int):
             ))
 
     db.commit()
-
-    return {"msg": f"Año {anio} cerrado y {nuevo_anio} creado correctamente"}
 # ======================================================
 # 📌 OBTENER RESUMEN MENSUAL POR NIT
 # ======================================================
@@ -321,7 +343,7 @@ def sumar_ajuste(db: Session, cliente_id: int, cantidad: int, fecha: date):
 # sincronizar mes actual
 # ======================================================
 def sincronizar_mes_actual(db: Session):
-    hoy = date.today()
+    hoy = obtener_fecha_actual()
     anio = hoy.year
     mes = hoy.month
 
