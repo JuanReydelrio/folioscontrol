@@ -5,7 +5,7 @@ from typing import List
 
 from database import get_db
 from security import get_current_user
-from models.usuario_model import Usuario
+from models.usuario_model import RolEnum, Usuario
 
 from schemas.ajuste_schema import (
     AjusteCreate,
@@ -26,7 +26,7 @@ router = APIRouter(
 # 🔒 SOLO ADMIN
 # ======================================================
 def require_admin(usuario: Usuario = Depends(get_current_user)):
-    if usuario.rol != "admin":
+    if usuario.rol != RolEnum.admin:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Acceso denegado: solo administradores."
@@ -60,6 +60,13 @@ def crear_ajuste(
 def listar_ajustes_por_cliente(
     cliente_id: int,
     db: Session = Depends(get_db),
-    _: Usuario = Depends(require_admin)
+    usuario: Usuario = Depends(get_current_user)
 ):
+
+    if usuario.rol != RolEnum.admin and usuario.cliente_id != cliente_id:
+        raise HTTPException(
+            status_code=403,
+            detail="No autorizado para ver ajustes de este cliente"
+        )
+
     return get_ajustes_by_cliente(db, cliente_id)

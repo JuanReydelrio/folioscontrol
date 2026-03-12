@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from database import get_db
 
@@ -6,8 +6,8 @@ from crud import crud_usuarios
 from schemas.usuario_schema import UsuarioCreate, UsuarioLogin, UsuarioResponse
 
 from security import get_current_user
-from models.usuario_model import Usuario
-from fastapi import HTTPException, status
+from models.usuario_model import Usuario, RolEnum
+
 
 router = APIRouter(
     prefix="/usuarios",
@@ -19,11 +19,13 @@ router = APIRouter(
 # 🔒 DEPENDENCIA: SOLO ADMIN
 # ======================================================
 def require_admin(usuario: Usuario = Depends(get_current_user)):
-    if usuario.rol != "admin":
+
+    if usuario.rol != RolEnum.admin:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Acceso denegado: solo administradores."
         )
+
     return usuario
 
 

@@ -28,7 +28,8 @@ def create_usuario(db: Session, usuario: UsuarioCreate):
     nuevo = Usuario(
         nombre_usuario=usuario.nombre_usuario,
         contrasena=hashed,
-        rol=usuario.rol
+        rol=usuario.rol,
+        cliente_id=usuario.cliente_id
     )
 
     db.add(nuevo)
@@ -61,8 +62,9 @@ def login_usuario(db: Session, credenciales: UsuarioLogin):
     # Generamos token de acceso (válido por 1 hora)
     access_token_expires = timedelta(hours=1)
     token = create_access_token(
-        data={"sub": usuario.nombre_usuario, "rol": usuario.rol.value},
+        data={"sub": usuario.nombre_usuario, "rol": usuario.rol.value, "cliente_id": usuario.cliente_id},
         expires_delta=access_token_expires
+        
     )
 
     return {"access_token": token, "token_type": "bearer"}

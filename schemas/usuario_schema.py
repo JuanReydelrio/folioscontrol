@@ -13,6 +13,7 @@ class UsuarioBase(BaseModel):
     """
     nombre_usuario: str
     rol: Optional[str] = "usuario"
+    cliente_id: Optional[int] = None  # Solo para usuarios con rol "usuario"
 
 
 # ---------------------------------------------------------
@@ -48,6 +49,7 @@ class UsuarioResponse(BaseModel):
     id: int
     nombre_usuario: str
     rol: str
+    cliente_id: Optional[int] = None
 
     class Config:
         from_attributes = True  # Permite convertir modelos ORM a Pydantic
