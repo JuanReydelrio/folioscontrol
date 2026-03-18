@@ -176,8 +176,12 @@ def crear_salida(db: Session, data: SalidaCreate):
         saldo_despues,
         mensaje
     )
+# Cambio principal: decidir estado final según si está en o por debajo del mínimo
+    estado_final = "APROBADO"
+    if saldo_despues <= cliente.minimo_alerta:
+        estado_final = "APROBADO/FINALIZANDO"
 
-    return {"estado": "APROBADO", "mensaje": mensaje}
+    return {"estado": estado_final, "mensaje": mensaje}
 
 def obtener_salidas_por_nit(db: Session, nit: str):
     cliente = db.query(Cliente).filter(Cliente.nit == nit).first()
