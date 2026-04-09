@@ -120,7 +120,18 @@ def crear_salida(db: Session, data: SalidaCreate):
         db.commit()
         db.refresh(nueva_salida) 
         db.refresh(cliente)
-        return {"estado": "APROBADO", "mensaje": mensaje}
+# === NUEVA LÓGICA: También usar APROBADO/FINALIZANDO para bloqueados ===
+        if saldo_despues <= cliente.minimo_alerta:
+            if saldo_despues > 0:
+                mensaje = f"Has bajado del límite de alerta. Folios restantes: {saldo_despues}. Se recomienda adquirir más folios."
+            else:
+                mensaje = "Ya no te quedan folios disponibles. Contacte a su proveedor."
+            estado_final = "APROBADO/FINALIZANDO"
+        else:
+            mensaje = "Operación aprobada."
+            estado_final = "APROBADO"
+
+        return {"estado": estado_final, "mensaje": mensaje}
     
     # ====================================
     # 5. CLIENTE NO BLOQUEADO
@@ -180,6 +191,7 @@ def crear_salida(db: Session, data: SalidaCreate):
     estado_final = "APROBADO"
     if saldo_despues <= cliente.minimo_alerta:
         estado_final = "APROBADO/FINALIZANDO"
+
 
     return {"estado": estado_final, "mensaje": mensaje}
 
