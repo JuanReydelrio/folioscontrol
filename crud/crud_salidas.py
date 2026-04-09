@@ -123,7 +123,7 @@ def crear_salida(db: Session, data: SalidaCreate):
 # === NUEVA LÓGICA: También usar APROBADO/FINALIZANDO para bloqueados ===
         if saldo_despues <= cliente.minimo_alerta:
             if saldo_despues > 0:
-                mensaje = f"Has bajado del límite de alerta. Folios restantes: {saldo_despues}. Se recomienda adquirir más folios."
+                mensaje = f"Folios restantes: {saldo_despues}. Se recomienda adquirir más folios."
             else:
                 mensaje = "Ya no te quedan folios disponibles. Contacte a su proveedor."
             estado_final = "APROBADO/FINALIZANDO"
