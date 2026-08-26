@@ -8,7 +8,6 @@ from security import get_current_user
 from crud.crud_resumen import (
     resumen_mensual_por_nit,
     resumen_anual_por_nit,
-    cierre_anual_manual,
     resumenes_mensuales_anio_por_nit
 )
 
@@ -106,16 +105,3 @@ def get_resumenes_mensuales_anio(
         nit = cliente.nit
 
     return resumenes_mensuales_anio_por_nit(db, nit, anio)
-
-
-
-# ======================================================
-# 🔒 CIERRE ANUAL GLOBAL
-# ======================================================
-@router.post("/cerrar-anio")
-def cerrar_anio_global(
-    anio: int,
-    db: Session = Depends(get_db),
-    _ = Depends(require_admin)
-):
-    return cierre_anual_manual(db, anio)

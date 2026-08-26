@@ -1,0 +1,6 @@
+util para iniciar y probar localmente:
+
+docker stop folioscontrol-local
+docker rm folioscontrol-local
+docker build -t folioscontrol-local .
+docker run --name folioscontrol-local -p 8000:8000 --env-file .env folioscontrol-local

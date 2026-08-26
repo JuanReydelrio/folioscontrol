@@ -16,21 +16,8 @@ from crud.crud_resumen import (
     recalcular_saldo_resumenes,
     validar_mes_abierto,
     cierre_mensual_automatico,
-    sincronizar_mes_actual
+    verificar_cambio_anio,
 )
-
-
-# ======================================================
-# VALIDACIÓN FUERTE: SOLO MES ACTUAL
-# ======================================================
-def validar_mes_actual(fecha: date):
-    hoy = obtener_fecha_actual()
-    if fecha.year != hoy.year or fecha.month != hoy.month:
-        raise HTTPException(
-            status_code=409,
-            detail="Solo se permiten movimientos en el mes actual."
-        )
-
 
 # ======================================================
 # CREAR ENTRADA
@@ -41,9 +28,9 @@ def create_entrada(db: Session, entrada_in: EntradaCreate, usuario_id: int) -> E
     if not cliente:
         raise HTTPException(404, "Cliente no encontrado")
 
-    # 🔒 VALIDACIONES CLAVE
-    validar_mes_actual(entrada_in.fecha)
+    # 🔒 FLUJO: cierre_mensual_automatico -> verificar_cambio_anio -> abrir mes actual
     cierre_mensual_automatico(db, entrada_in.cliente_id, entrada_in.fecha)
+    verificar_cambio_anio(db, entrada_in.fecha)
     validar_mes_abierto(db, entrada_in.cliente_id, entrada_in.fecha)
 
     entrada = Entrada(
@@ -123,13 +110,10 @@ def update_entrada(db: Session, entrada_id: int, entrada_data: EntradaUpdate) ->
     fecha_nueva = data.get("fecha", fecha_original)
     factura_nueva = data.get("numero_factura", entrada.numero_factura)
 
-    # 🔒 ORDEN CORRECTO
-    validar_mes_actual(fecha_nueva)
+    # 🔒 FLUJO: cierre_mensual_automatico -> verificar_cambio_anio -> abrir mes actual
 
-    sincronizar_mes_actual(db, fecha_nueva)
-
+    verificar_cambio_anio(db, fecha_nueva)
     cierre_mensual_automatico(db, entrada.cliente_id, fecha_nueva)
-
     validar_mes_abierto(db, entrada.cliente_id, fecha_nueva)
 
     try:
@@ -172,13 +156,9 @@ def delete_entrada(db: Session, entrada_id: int):
     if not cliente:
         raise HTTPException(500, "Cliente asociado no encontrado")
 
-    # 🔒 ORDEN CORRECTO
-    validar_mes_actual(entrada.fecha)
-
-    sincronizar_mes_actual(db, entrada.fecha)
 
     cierre_mensual_automatico(db, entrada.cliente_id, entrada.fecha)
-
+    verificar_cambio_anio(db, entrada.fecha)
     validar_mes_abierto(db, entrada.cliente_id, entrada.fecha)
 
     try:

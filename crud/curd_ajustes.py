@@ -12,7 +12,8 @@ from crud.crud_resumen import (
     sumar_ajuste,
     validar_mes_abierto,
     cierre_mensual_automatico,
-    recalcular_saldo_resumenes
+    recalcular_saldo_resumenes,
+    verificar_cambio_anio,
 )
 
 def validar_mes_actual(fecha: date):
@@ -29,8 +30,9 @@ def create_ajuste(db: Session, data, usuario_id: int):
     if not cliente:
         raise HTTPException(404, "Cliente no encontrado")
 
-    # 🔒 mismas reglas que entradas
+    # 🔒 FLUJO: cierre_mensual_automatico -> verificar_cambio_anio -> abrir mes actual
     validar_mes_actual(data.fecha)
+    verificar_cambio_anio(db, data.fecha)
     cierre_mensual_automatico(db, cliente.id, data.fecha)
     validar_mes_abierto(db, cliente.id, data.fecha)
 
@@ -78,5 +80,4 @@ def get_ajustes_by_cliente(db: Session, cliente_id: int) -> List[Ajuste]:
         .order_by(Ajuste.id.desc())
         .all()
     )
-
     return ajustes
