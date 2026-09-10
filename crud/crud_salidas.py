@@ -5,6 +5,7 @@ from models.cliente_model import Cliente
 from schemas.salida_schema import SalidaCreate
 from services.time_service import obtener_fecha_actual
 from services.email_service import enviar_alerta_folios   
+import time
 from crud.crud_resumen import sumar_salida, cierre_mensual_automatico, validar_mes_abierto, verificar_cambio_anio
 
 # ======================================================
@@ -35,10 +36,15 @@ def verificar_y_enviar_alerta(cliente, saldo_antes, saldo_despues, mensaje):
 
 
 def crear_salida(db: Session, data: SalidaCreate):
+    tiempo_total= time.pref_counter()
+
     hoy = obtener_fecha_actual()
+
+    inicio = time.perf_counter()
 
     # 2. Buscar cliente por NIT
     cliente: Cliente | None = db.query(Cliente).filter(Cliente.nit == data.nit).first()
+    print(f"[TIEMPO] Buscar cliente: {time.perf_counter() - inicio:.3f} s")
     
     if not cliente:
         return {"estado": "RECHAZADO", "mensaje": "El cliente no existe."}
@@ -52,8 +58,12 @@ def crear_salida(db: Session, data: SalidaCreate):
 
     # 4. FLUJO: cierre_mensual_automatico -> verificar_cambio_anio -> abrir mes actual
     verificar_cambio_anio(db, hoy)
+    print(f"[TIEMPO] Verificar cambio de año: {time.perf_counter() - inicio:.3f} s")
     cierre_mensual_automatico(db, cliente.id, hoy)
+    print(f"[TIEMPO] Cierre mensual automático: {time.perf_counter() - inicio:.3f} s")
     validar_mes_abierto(db, cliente.id, hoy)
+    print(f"[TIEMPO] Validar mes abierto: {time.perf_counter() - inicio:.3f} s")
+
 
     cantidad = 1
 
@@ -75,6 +85,7 @@ def crear_salida(db: Session, data: SalidaCreate):
         Salida.tipo_documento == data.tipo_documento,
         Salida.numero_documento == data.numero_documento
     ).first()
+    print(f"[TIEMPO] Verificar duplicado: {time.perf_counter() - inicio:.3f} s")
 
     if duplicado:
         return {
@@ -116,7 +127,9 @@ def crear_salida(db: Session, data: SalidaCreate):
         cliente.saldo_actual = saldo_despues
         # 🔥 Actualiza resumen mensual + anual
         sumar_salida(db, cliente.id, data.tipo_documento, hoy)
+        print(f"[TIEMPO] Registrar salida: {time.perf_counter() - inicio:.3f} s")
         db.commit()
+        print(f"[TIEMPO] Commit: {time.perf_counter() - inicio:.3f} s")
         db.refresh(nueva_salida) 
         db.refresh(cliente)
 # === NUEVA LÓGICA: También usar APROBADO/FINALIZANDO para bloqueados ===
