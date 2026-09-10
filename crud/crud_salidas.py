@@ -36,7 +36,8 @@ def verificar_y_enviar_alerta(cliente, saldo_antes, saldo_despues, mensaje):
 
 
 def crear_salida(db: Session, data: SalidaCreate):
-    tiempo_total= time.pref_counter()
+
+    tiempo_total = time.perf_counter()
 
     hoy = obtener_fecha_actual()
 
@@ -126,12 +127,18 @@ def crear_salida(db: Session, data: SalidaCreate):
         db.add(nueva_salida)
         cliente.saldo_actual = saldo_despues
         # 🔥 Actualiza resumen mensual + anual
-        sumar_salida(db, cliente.id, data.tipo_documento, hoy)
-        print(f"[TIEMPO] Registrar salida: {time.perf_counter() - inicio:.3f} s")
-        db.commit()
-        print(f"[TIEMPO] Commit: {time.perf_counter() - inicio:.3f} s")
-        db.refresh(nueva_salida) 
-        db.refresh(cliente)
+        inicio = time.perf_counter()
+        verificar_cambio_anio(db, hoy)
+        print(f"[TIEMPO] Verificar cambio de año: {time.perf_counter() - inicio:.3f} s")
+
+        inicio = time.perf_counter()
+        cierre_mensual_automatico(db, cliente.id, hoy)
+        print(f"[TIEMPO] Cierre mensual automático: {time.perf_counter() - inicio:.3f} s")
+
+        inicio = time.perf_counter()
+        validar_mes_abierto(db, cliente.id, hoy)
+        print(f"[TIEMPO] Validar mes abierto: {time.perf_counter() - inicio:.3f} s")
+        
 # === NUEVA LÓGICA: También usar APROBADO/FINALIZANDO para bloqueados ===
         if saldo_despues <= cliente.minimo_alerta:
             if saldo_despues > 0:
