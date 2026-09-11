@@ -6,7 +6,7 @@ from schemas.salida_schema import SalidaCreate
 from services.time_service import obtener_fecha_actual
 from services.email_service import enviar_alerta_folios   
 import time
-from crud.crud_resumen import sumar_salida, cierre_mensual_automatico, validar_mes_abierto, verificar_cambio_anio
+from crud.crud_resumen import sumar_salida, cierre_mensual_automatico, validar_mes_abierto, verificar_cambio_anio_cliente
 
 # ======================================================
 # 🔔 ALERTAS CONTROLADAS (SIN SPAM)
@@ -41,64 +41,124 @@ def crear_salida(db: Session, data: SalidaCreate):
 
     hoy = obtener_fecha_actual()
 
+    # ==================================================
+    # 1. BUSCAR CLIENTE POR NIT
+    # ==================================================
+
     inicio = time.perf_counter()
 
-    # 2. Buscar cliente por NIT
-    cliente: Cliente | None = db.query(Cliente).filter(Cliente.nit == data.nit).first()
-    print(f"[TIEMPO] Buscar cliente: {time.perf_counter() - inicio:.3f} s")
-    
-    if not cliente:
-        return {"estado": "RECHAZADO", "mensaje": "El cliente no existe."}
+    cliente: Cliente | None = db.query(Cliente).filter(
+        Cliente.nit == data.nit
+    ).first()
 
-    # 3. Cliente inactivo
+    print(
+        f"[TIEMPO] Buscar cliente: "
+        f"{time.perf_counter() - inicio:.3f} s"
+    )
+
+    if not cliente:
+        return {
+            "estado": "RECHAZADO",
+            "mensaje": "El cliente no existe."
+        }
+
+    # ==================================================
+    # 2. CLIENTE INACTIVO
+    # ==================================================
+
     if cliente.inactivo:
         return {
             "estado": "RECHAZADO",
             "mensaje": "El cliente está inactivo y no puede emitir documentos."
         }
 
-    # 4. FLUJO: cierre_mensual_automatico -> verificar_cambio_anio -> abrir mes actual
-    verificar_cambio_anio(db, hoy)
-    print(f"[TIEMPO] Verificar cambio de año: {time.perf_counter() - inicio:.3f} s")
-    cierre_mensual_automatico(db, cliente.id, hoy)
-    print(f"[TIEMPO] Cierre mensual automático: {time.perf_counter() - inicio:.3f} s")
-    validar_mes_abierto(db, cliente.id, hoy)
-    print(f"[TIEMPO] Validar mes abierto: {time.perf_counter() - inicio:.3f} s")
+    # ==================================================
+    # 3. VERIFICAR AÑO SOLO PARA ESTE CLIENTE
+    # ==================================================
 
+    inicio = time.perf_counter()
+
+    verificar_cambio_anio_cliente(
+        db,
+        cliente.id,
+        hoy
+    )
+
+    print(
+        f"[TIEMPO] Verificar cambio de año cliente: "
+        f"{time.perf_counter() - inicio:.3f} s"
+    )
+
+    # ==================================================
+    # 4. CIERRE MENSUAL AUTOMÁTICO
+    # ==================================================
+
+    inicio = time.perf_counter()
+
+    cierre_mensual_automatico(
+        db,
+        cliente.id,
+        hoy
+    )
+
+    print(
+        f"[TIEMPO] Cierre mensual automático: "
+        f"{time.perf_counter() - inicio:.3f} s"
+    )
+
+    # ==================================================
+    # 5. VALIDAR MES ABIERTO
+    # ==================================================
+
+    inicio = time.perf_counter()
+
+    validar_mes_abierto(
+        db,
+        cliente.id,
+        hoy
+    )
+
+    print(
+        f"[TIEMPO] Validar mes abierto: "
+        f"{time.perf_counter() - inicio:.3f} s"
+    )
 
     cantidad = 1
 
-    cliente: Cliente = db.query(Cliente).filter(Cliente.nit == data.nit).first()
+    # ==================================================
+    # 6. VERIFICAR DUPLICADO
+    # ==================================================
 
-    if not cliente:
-        return {"estado": "RECHAZADO", "mensaje": "El cliente no existe."}
+    inicio = time.perf_counter()
 
-    # Cliente inactivo
-    if cliente.inactivo:
-        return {
-            "estado": "RECHAZADO",
-            "mensaje": "El cliente está inactivo y no puede emitir documentos."
-        }
-
-    # Duplicado
     duplicado = db.query(Salida).filter(
         Salida.cliente_id == cliente.id,
         Salida.tipo_documento == data.tipo_documento,
         Salida.numero_documento == data.numero_documento
     ).first()
-    print(f"[TIEMPO] Verificar duplicado: {time.perf_counter() - inicio:.3f} s")
+
+    print(
+        f"[TIEMPO] Verificar duplicado: "
+        f"{time.perf_counter() - inicio:.3f} s"
+    )
 
     if duplicado:
         return {
             "estado": "APROBADO",
             "mensaje": "Documento duplicado. No se descontó folio."
         }
+
+    # ==================================================
+    # 7. CALCULAR SALDO
+    # ==================================================
+
     saldo_antes = cliente.saldo_actual
     saldo_despues = cliente.saldo_actual - cantidad
 
-    # ====================================
-    # 4. CLIENTE BLOQUEADO
-    # ====================================
+    # ==================================================
+    # 8. CLIENTE BLOQUEADO
+    # ==================================================
+
     if cliente.bloqueado:
 
         if cliente.saldo_actual <= 0:
@@ -107,15 +167,22 @@ def crear_salida(db: Session, data: SalidaCreate):
                 "mensaje": "Cliente sin folios disponibles, Porfavor contactese con DREAMSOFT para adquirir más folios."
             }
 
-        # Bloqueado pero queda en mínimo de alerta
+        # ----------------------------------------------
+        # Mensaje inicial
+        # ----------------------------------------------
+
         if saldo_despues <= cliente.minimo_alerta:
-            mensaje = f"Folios restantes: {saldo_despues}. Se recomienda adquirir más folios."
-
-        # Bloqueado y operación normal
+            mensaje = (
+                f"Folios restantes: {saldo_despues}. "
+                f"Se recomienda adquirir más folios."
+            )
         else:
-            mensaje = f"Operación aprobada."
+            mensaje = "Operación aprobada."
 
+        # ----------------------------------------------
         # Registrar salida
+        # ----------------------------------------------
+
         nueva_salida = Salida(
             cliente_id=cliente.id,
             tipo_documento=data.tipo_documento,
@@ -125,64 +192,139 @@ def crear_salida(db: Session, data: SalidaCreate):
         )
 
         db.add(nueva_salida)
+
         cliente.saldo_actual = saldo_despues
-        # 🔥 Actualiza resumen mensual + anual
-        inicio = time.perf_counter()
-        verificar_cambio_anio(db, hoy)
-        print(f"[TIEMPO] Verificar cambio de año: {time.perf_counter() - inicio:.3f} s")
+
+        # ----------------------------------------------
+        # Actualizar resumen mensual + anual
+        # ----------------------------------------------
 
         inicio = time.perf_counter()
-        cierre_mensual_automatico(db, cliente.id, hoy)
-        print(f"[TIEMPO] Cierre mensual automático: {time.perf_counter() - inicio:.3f} s")
+
+        sumar_salida(
+            db,
+            cliente.id,
+            data.tipo_documento,
+            hoy
+        )
+
+        print(
+            f"[TIEMPO] Sumar salida: "
+            f"{time.perf_counter() - inicio:.3f} s"
+        )
+
+        # ----------------------------------------------
+        # Commit
+        # ----------------------------------------------
 
         inicio = time.perf_counter()
-        validar_mes_abierto(db, cliente.id, hoy)
-        print(f"[TIEMPO] Validar mes abierto: {time.perf_counter() - inicio:.3f} s")
-        
-# === NUEVA LÓGICA: También usar APROBADO/FINALIZANDO para bloqueados ===
+
+        db.commit()
+
+        print(
+            f"[TIEMPO] Commit: "
+            f"{time.perf_counter() - inicio:.3f} s"
+        )
+
+        db.refresh(nueva_salida)
+        db.refresh(cliente)
+
+        # ----------------------------------------------
+        # Estado final
+        # ----------------------------------------------
+
         if saldo_despues <= cliente.minimo_alerta:
+
             if saldo_despues > 0:
-                mensaje = f"Folios restantes: {saldo_despues}. Se recomienda adquirir más folios."
+                mensaje = (
+                    f"Folios restantes: {saldo_despues}. "
+                    f"Se recomienda adquirir más folios."
+                )
             else:
-                mensaje = "Ya no te quedan folios disponibles. Contacte a su proveedor."
+                mensaje = (
+                    "Ya no te quedan folios disponibles. "
+                    "Contacte a su proveedor."
+                )
+
             estado_final = "APROBADO/FINALIZANDO"
+
         else:
             mensaje = "Operación aprobada."
             estado_final = "APROBADO"
 
-        return {"estado": estado_final, "mensaje": mensaje}
-    
-    # ====================================
-    # 5. CLIENTE NO BLOQUEADO
-    # ====================================
+        print(
+            f"[TIEMPO] TOTAL crear_salida: "
+            f"{time.perf_counter() - tiempo_total:.3f} s"
+        )
 
-    # Caso → saldo suficiente y sobra
+        return {
+            "estado": estado_final,
+            "mensaje": mensaje
+        }
+
+    # ==================================================
+    # 9. CLIENTE NO BLOQUEADO
+    # ==================================================
+
+    # ----------------------------------------------
+    # Saldo suficiente y sobra
+    # ----------------------------------------------
+
     if cliente.saldo_actual > cantidad:
 
         saldo_despues = cliente.saldo_actual - cantidad
 
-        # Caso queda en 0 EXACTO
+        # Queda en 0
         if saldo_despues == 0:
-            mensaje = "Ya no te quedan folios disponibles. Contacte a su proveedor."
 
-        # Caso dentro de mínimo de alerta
+            mensaje = (
+                "Ya no te quedan folios disponibles. "
+                "Contacte a su proveedor."
+            )
+
+        # Dentro del mínimo de alerta
         elif saldo_despues <= cliente.minimo_alerta:
-            mensaje = f"Folios restantes: {saldo_despues}. Se recomienda adquirir más folios."
+
+            mensaje = (
+                f"Folios restantes: {saldo_despues}. "
+                f"Se recomienda adquirir más folios."
+            )
 
         else:
+
             mensaje = "Operación aprobada."
 
-    # Caso → saldo exacto al consumo (1 → queda en 0)
+    # ----------------------------------------------
+    # Saldo exacto
+    # ----------------------------------------------
+
     elif cliente.saldo_actual == cantidad:
+
         saldo_despues = 0
-        mensaje = "Ya no te quedan folios disponibles. Contacte a su proveedor."
 
-    # Caso → saldo insuficiente → saldo negativo permitido
+        mensaje = (
+            "Ya no te quedan folios disponibles. "
+            "Contacte a su proveedor."
+        )
+
+    # ----------------------------------------------
+    # Saldo insuficiente
+    # ----------------------------------------------
+
     else:
-        saldo_despues = cliente.saldo_actual - cantidad
-        mensaje = f"Saldo insuficiente. Su saldo es negativo ({saldo_despues}). Contacte a su proveedor."
 
-    # Registrar salida
+        saldo_despues = cliente.saldo_actual - cantidad
+
+        mensaje = (
+            f"Saldo insuficiente. "
+            f"Su saldo es negativo ({saldo_despues}). "
+            f"Contacte a su proveedor."
+        )
+
+    # ==================================================
+    # 10. REGISTRAR SALIDA
+    # ==================================================
+
     nueva_salida = Salida(
         cliente_id=cliente.id,
         tipo_documento=data.tipo_documento,
@@ -192,13 +334,48 @@ def crear_salida(db: Session, data: SalidaCreate):
     )
 
     db.add(nueva_salida)
+
     cliente.saldo_actual = saldo_despues
-    # 🔥 Actualizar resumen mensual + anual
-    sumar_salida(db, cliente.id, data.tipo_documento, hoy)
-    
+
+    # ==================================================
+    # 11. ACTUALIZAR RESUMEN MENSUAL + ANUAL
+    # ==================================================
+
+    inicio = time.perf_counter()
+
+    sumar_salida(
+        db,
+        cliente.id,
+        data.tipo_documento,
+        hoy
+    )
+
+    print(
+        f"[TIEMPO] Sumar salida: "
+        f"{time.perf_counter() - inicio:.3f} s"
+    )
+
+    # ==================================================
+    # 12. COMMIT
+    # ==================================================
+
+    inicio = time.perf_counter()
+
     db.commit()
+
+    print(
+        f"[TIEMPO] Commit: "
+        f"{time.perf_counter() - inicio:.3f} s"
+    )
+
     db.refresh(nueva_salida)
     db.refresh(cliente)
+
+    # ==================================================
+    # 13. VERIFICAR / ENVIAR ALERTA
+    # ==================================================
+
+    inicio = time.perf_counter()
 
     verificar_y_enviar_alerta(
         cliente,
@@ -206,13 +383,34 @@ def crear_salida(db: Session, data: SalidaCreate):
         saldo_despues,
         mensaje
     )
-# Cambio principal: decidir estado final según si está en o por debajo del mínimo
+
+    print(
+        f"[TIEMPO] Alerta: "
+        f"{time.perf_counter() - inicio:.3f} s"
+    )
+
+    # ==================================================
+    # 14. ESTADO FINAL
+    # ==================================================
+
     estado_final = "APROBADO"
+
     if saldo_despues <= cliente.minimo_alerta:
         estado_final = "APROBADO/FINALIZANDO"
 
+    # ==================================================
+    # 15. TIEMPO TOTAL
+    # ==================================================
 
-    return {"estado": estado_final, "mensaje": mensaje}
+    print(
+        f"[TIEMPO] TOTAL crear_salida: "
+        f"{time.perf_counter() - tiempo_total:.3f} s"
+    )
+
+    return {
+        "estado": estado_final,
+        "mensaje": mensaje
+    }
 
 def obtener_salidas_por_nit(db: Session, nit: str):
     cliente = db.query(Cliente).filter(Cliente.nit == nit).first()
