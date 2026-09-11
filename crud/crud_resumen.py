@@ -467,7 +467,160 @@ def verificar_cambio_anio(
     # Hacemos visibles los cambios para el resto
     # del flujo, pero NO confirmamos la transacción aquí.
     db.flush()
+#=====================================================
+# verificar cambio de año para un cliente específico
+#=====================================================
+def verificar_cambio_anio_cliente(
+    db: Session,
+    cliente_id: int,
+    fecha: date
+):
+    """
+    Garantiza que un solo cliente tenga preparado
+    el año correspondiente a la fecha indicada.
 
+    No revisa ni procesa otros clientes.
+    """
+
+    anio_actual = fecha.year
+    anio_anterior = anio_actual - 1
+
+    # ==================================================
+    # 1. BUSCAR CLIENTE
+    # ==================================================
+
+    cliente = db.query(Cliente).filter(
+        Cliente.id == cliente_id
+    ).first()
+
+    if not cliente:
+        raise HTTPException(
+            status_code=404,
+            detail="Cliente no encontrado"
+        )
+
+    # ==================================================
+    # 2. ¿YA EXISTE EL AÑO ACTUAL?
+    # ==================================================
+
+    resumen_actual = db.query(ResumenAnual).filter_by(
+        cliente_id=cliente_id,
+        anio=anio_actual
+    ).first()
+
+    # Si ya existe, no hacemos nada.
+    #
+    # Esta es la parte que hará que las salidas
+    # normales sean rápidas durante todo el año.
+
+    if resumen_actual:
+        return
+
+    # ==================================================
+    # 3. SINCRONIZAR EL AÑO ANTERIOR
+    # ==================================================
+
+    sincronizar_resumenes_cliente(
+        db=db,
+        cliente_id=cliente_id,
+        fecha=date(anio_anterior, 12, 31)
+    )
+
+    # ==================================================
+    # 4. CERRAR MESES DEL AÑO ANTERIOR
+    # ==================================================
+
+    db.query(ResumenMensual).filter(
+        ResumenMensual.cliente_id == cliente_id,
+        ResumenMensual.anio == anio_anterior
+    ).update(
+        {
+            "estado": "cerrado"
+        },
+        synchronize_session=False
+    )
+
+    # ==================================================
+    # 5. CERRAR RESUMEN ANUAL ANTERIOR
+    # ==================================================
+
+    resumen_anterior = db.query(ResumenAnual).filter_by(
+        cliente_id=cliente_id,
+        anio=anio_anterior
+    ).first()
+
+    if resumen_anterior:
+
+        resumen_anterior.estado = "cerrado"
+
+        diciembre = db.query(ResumenMensual).filter_by(
+            cliente_id=cliente_id,
+            anio=anio_anterior,
+            mes=12
+        ).first()
+
+        if diciembre:
+            saldo_cierre = diciembre.saldo_final or 0
+        else:
+            saldo_cierre = cliente.saldo_actual or 0
+
+        resumen_anterior.saldo_final = saldo_cierre
+
+        saldo_inicial_nuevo_anio = saldo_cierre
+
+    else:
+
+        # Si no existía resumen anual anterior,
+        # usamos el saldo actual del cliente.
+
+        saldo_inicial_nuevo_anio = cliente.saldo_actual or 0
+
+    # ==================================================
+    # 6. CREAR RESUMEN ANUAL DEL NUEVO AÑO
+    # ==================================================
+
+    nuevo_anual = ResumenAnual(
+        cliente_id=cliente_id,
+        anio=anio_actual,
+        estado="abierto",
+        saldo_inicial=saldo_inicial_nuevo_anio,
+        saldo_final=saldo_inicial_nuevo_anio
+    )
+
+    db.add(nuevo_anual)
+
+    # ==================================================
+    # 7. CREAR LOS 12 MESES DEL NUEVO AÑO
+    # ==================================================
+
+    for mes in range(1, 13):
+
+        es_enero = mes == 1
+
+        nuevo_mensual = ResumenMensual(
+            cliente_id=cliente_id,
+            anio=anio_actual,
+            mes=mes,
+            estado="abierto" if es_enero else "cerrado",
+            saldo_inicial=(
+                saldo_inicial_nuevo_anio
+                if es_enero
+                else 0
+            ),
+            saldo_final=(
+                saldo_inicial_nuevo_anio
+                if es_enero
+                else 0
+            )
+        )
+
+        db.add(nuevo_mensual)
+
+    # ==================================================
+    # 8. HACER VISIBLES LOS CAMBIOS
+    # ==================================================
+
+    db.flush()
 
 # ======================================================
 # ➕ ENTRADAS
@@ -531,7 +684,7 @@ def sumar_salida(db: Session, cliente_id: int, tipo: str, fecha: date | None):
     #==============================================
     # verifcar cambio de año
     #==============================================
-    verificar_cambio_anio(db, fecha)
+    verificar_cambio_anio_cliente(db, cliente_id, fecha)
 
     anio, mes = fecha.year, fecha.month
 
